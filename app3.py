@@ -11,7 +11,8 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 st.set_page_config(page_title="Agente Monografia", layout="wide")
-st.title("🎓 Sistema Agente Monografia")
+st.title("🎓 Sistema de IA para Monografia")
+st.title("Parte 1 - Escolha do tema, estratégia de pesquisa e cronograma")
 
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -32,7 +33,7 @@ area = ""
 
 # --- AGENTE 1: ESCOLHA DO TEMA ---
 if st.session_state.step == 1:
-    st.header("Agente 1: Escolha do Tema")
+    st.header("Primeiro vamos trabalhar a escolha do tema")
     area = st.text_input("Qual sua área de interesse?")
     
     if st.button("Iniciar"):
@@ -61,7 +62,7 @@ if st.session_state.step == 1:
         st.rerun()
 
     if "temas_sugeridos" in st.session_state:
-        st.info("Sugestões encontradas:")
+        st.info("Temas sugeridos:")
         st.markdown(st.session_state.temas_sugeridos)
         escolha = st.text_input("Copie o tema que deseje trabalhar e cole na caixa de texto abaixo. " \
         "\nCaso não tenha gostado de nenhuma das minhas sugestões, digite um novo tema:")
@@ -81,7 +82,8 @@ elif st.session_state.step == 2:
             academicamente bem delimitados.
             Apresente 10 sugestões de subtemas específicos para revisão da literatura 
             no tema {st.session_state.dados['tema_base']}.
-            Garanta variação de enfoque entre os temas sugeridos.
+            Garanta variação de enfoque entre os temas sugeridos mas garanta que todos os
+            subtemas sugeridos sejam realmente subtemas do tema {st.session_state.dados['tema_base']}.
             Output
                 Apresente exatamente 10 temas, em lista numerada (1 a 10).
                 Cada item deve conter somente o título do tema seguido de um parágrafo com
@@ -98,7 +100,7 @@ elif st.session_state.step == 2:
 
 # --- AGENTE 3: PROBLEMA DE PESQUISA ---
 elif st.session_state.step == 3:
-    st.header("Agente 3: Problema de Pesquisa")
+    st.header("Agente 3: \nProblema de Pesquisa")
     if "probs" not in st.session_state:
         prompt = f"Para o tema {st.session_state.dados['tema_escolhido']}, crie 5 sugestões de 'Problema de pesquisa'."
         st.session_state.probs = call_gpt(prompt)
