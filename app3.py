@@ -33,102 +33,234 @@ area = ""
 
 # --- AGENTE 1: ESCOLHA DO TEMA ---
 if st.session_state.step == 1:
-    st.header("Primeiro vamos trabalhar a escolha do tema")
-    area = st.text_input("Qual sua área de interesse?")
+    st.header("Passo 1: Definição do Tema")
+    st.subheader("Digite sua área e descreva uma ideia inicial para começarmos")
     
-    if st.button("Iniciar"):
-        with st.spinner("Gerando sugestões de temas..."):
-            #prompt = f"Faça uma análise dos títulos dos artigos dos últimos 5 anos dos 
-            #3 periódicos científicos internacionais mais importantes atualmente na área 
-            #{area} e identifique os 5 temas mais relevantes com base na quantidade de publicações."
+    st.markdown("---") # Uma linha horizontal para separar o cabeçalho do formulário
+    
+    # Interface de entrada dupla
+    col1, col2 = st.columns(2)
+    with col1:
+        area = st.text_input("Área do Conhecimento", placeholder="Ex: Psicologia Organizacional")
+    with col2:
+        # Usamos o markdown para criar o rótulo com quebras de linha
+        st.markdown("Descreva sua ideia<br>Lembre-se que eu sou uma IA, descreva o mais detalhado possível.", unsafe_allow_html=True)
 
-            prompt = f"""Você atua como orientador acadêmico experiente, 
-            com domínio de metodologia científica e elaboração de trabalhos de conclusão de curso, 
-            capaz de propor temas viáveis, relevantes e academicamente bem delimitados.
-            Gere 10 opções de temas de monografia a partir do assunto {area}, que sejam adequados a nível 
-            de graduação ou pós-graduação, considerando:
-                - relevância científica,
-                - clareza conceitual,
-                - adequação à escrita acadêmica formal,
-                - que as sugestões sejam realmente diferentes umas das outras do ponto de vista conceitual,
-                - que o trabalho deverá sempre ser do tipo revisão da literatura do tipo integrativa.
-            Output
-                Apresente exatamente 10 temas, em lista numerada (1 a 10). 
-                Cada item deve conter somente o título do tema, sem comentários, explicações ou subtítulos.
-                Utilize linguagem acadêmica formal.
-                Garanta variação de enfoque entre os temas (teórico, empírico, aplicado, comparativo, metodológico).
-            """
-            st.session_state.temas_sugeridos = call_gpt(prompt)
+        # Criamos o text_area com label_visibility="collapsed" para não repetir o título
+        ideia_bruta = st.text_area(
+            label="Descricao", 
+            label_visibility="collapsed",
+            placeholder="Ex: Quero falar sobre..."
+        )
+    if st.button("Gerar Sugestões"):
+        with st.spinner("O orientador IA está redigindo os temas..."):
+            # Lógica de prioridade e seleção de prompt
+            if ideia_bruta.strip():
+                # Prompt para quando o usuário já tem uma ideia
+                prompt = f"""Você atua como orientador acadêmico experiente. 
+                O usuário propôs a seguinte ideia: {ideia_bruta} na área de {area}.
+                Refine esta ideia e gere 10 opções de temas de monografia para uma revisão integrativa da literatura.
+                Output: Apresente exatamente 10 temas, em lista numerada (1 a 10), apenas os títulos, sem comentários."""
+            else:
+                # Prompt original baseado na área
+                prompt = f"""Você atua como orientador acadêmico experiente. 
+                Gere 10 opções de temas de monografia a partir da área {area} para uma revisão integrativa da literatura.
+                Output: Apresente exatamente 10 temas, em lista numerada (1 a 10), apenas os títulos, sem comentários."""
+            
+            resposta = call_gpt(prompt)
+            # Transformar a string da API em uma lista real de Python para o st.radio
+            linhas = resposta.strip().split('\n')
+            # Limpar números e pontos (ex: "1. Tema" -> "Tema")
+            temas_limpos = [l.split('.', 1)[-1].strip() for l in linhas if l.strip()]
+            st.session_state.lista_temas_sugeridos = temas_limpos
         st.rerun()
 
-    if "temas_sugeridos" in st.session_state:
-        st.info("Temas sugeridos:")
-        st.markdown(st.session_state.temas_sugeridos)
-        escolha = st.text_input("Copie o tema que deseje trabalhar e cole na caixa de texto abaixo. " \
-        "\nCaso não tenha gostado de nenhuma das minhas sugestões, digite um novo tema:")
-        if st.button("Enviar para Aprofundamento do Tema"):
-            st.session_state.dados['tema_base'] = escolha  ##################################
-            st.session_state.step = 2
-            st.rerun()
+    # Se já houver temas gerados, exibe o rádio para seleção
+    if "lista_temas_sugeridos" in st.session_state:
+        st.info("Selecione o tema que mais lhe agrada:")
+        
+        tema_selecionado = st.radio(
+            "Temas sugeridos:",
+            st.session_state.lista_temas_sugeridos,
+            index=None, # Inicia sem nada selecionado
+            help="Escolha um dos temas gerados pela IA"
+        )
+        
+        outra_opcao = st.text_input("Ou digite seu próprio tema caso queira ajustar algum detalhe:")
+        
+        if st.button("Avançar para Aprofundamento"):
+            # Prioriza o texto manual se preenchido, senão usa o rádio
+            escolha_final = outra_opcao if outra_opcao.strip() else tema_selecionado
+            
+            if escolha_final:
+                st.session_state.dados['tema_base'] = escolha_final
+                st.session_state.step = 2
+                st.rerun()
+            else:
+                st.warning("Por favor, selecione um tema ou digite um antes de avançar.")
 
 # --- AGENTE 2: APROFUNDAMENTO ---
 elif st.session_state.step == 2:
     st.header("Agente 2: Aprofundamento do Tema")
-    if "subtemas_texto" not in st.session_state:
-        with st.spinner("Gerando subtemas..."):
-            prompt = f"""Você é um professor universitário na área de {area}. 
-            Atue como orientador acadêmico experiente, com domínio de metodologia científica e 
-            elaboração de trabalhos de conclusão de curso, capaz de propor temas viáveis, relevantes e 
-            academicamente bem delimitados.
-            Apresente 10 sugestões de subtemas específicos para revisão da literatura 
-            no tema {st.session_state.dados['tema_base']}.
-            Garanta variação de enfoque entre os temas sugeridos mas garanta que todos os
-            subtemas sugeridos sejam realmente subtemas do tema {st.session_state.dados['tema_base']}.
-            Output
-                Apresente exatamente 10 temas, em lista numerada (1 a 10).
-                Cada item deve conter somente o título do tema seguido de um parágrafo com
-                uma breve definição ou explicação do tema.
-                Utilize linguagem acadêmica formal. """
-            st.session_state.subtemas_texto = call_gpt(prompt)
+    
+    # Exibe o tema base para orientação
+    st.info(f"**Tema Base Selecionado:** {st.session_state.dados['tema_base']}")
+    st.divider()
 
-    st.markdown(st.session_state.subtemas_texto)
-    tema_final = st.text_input("Digite/Cole o tema específico escolhido:")
-    if st.button("Confirmar Subtema"):
-        st.session_state.dados['tema_escolhido'] = tema_final
-        st.session_state.step = 3
-        st.rerun()
+    if "subtemas_lista" not in st.session_state:
+        with st.spinner("O orientador está gerando subtemas específicos..."):
+            prompt = f"""Você é um professor universitário. 
+            Apresente 10 sugestões de subtemas específicos para uma revisão da literatura 
+            baseada no tema: {st.session_state.dados['tema_base']}.
+            
+            Output:
+            Apresente exatamente 10 itens em uma lista numerada (1 a 10).
+            Cada item deve conter o título do tema seguido de uma breve explicação.
+            Use linguagem acadêmica formal."""
+            
+            res = call_gpt(prompt)
+            # Armazenamos a string bruta para exibição e processamos para a lógica
+            st.session_state.subtemas_texto_bruto = res
+            linhas = res.strip().split('\n')
+            # Extraímos apenas o texto após o "1. " para facilitar o resgate depois
+            st.session_state.subtemas_lista = [l.split('.', 1)[-1].strip() for l in linhas if l.strip() and l[0].isdigit()]
+
+    # Exibe a lista numerada para o usuário ver os números
+    st.markdown(st.session_state.subtemas_texto_bruto)
+    
+    st.divider()
+    
+    # Caixa de entrada única para número ou texto
+    escolha_input = st.text_input(
+        "Digite o NÚMERO do tema desejado OU escreva um NOVO tema do zero:",
+        placeholder="Ex: 5 ou 'A influência da IA na educação básica'"
+    )
+
+    if st.button("Confirmar Escolha"):
+        if escolha_input.strip():
+            # Tenta verificar se o input é um número entre 1 e 10
+            if escolha_input.isdigit():
+                indice = int(escolha_input)
+                if 1 <= indice <= len(st.session_state.subtemas_lista):
+                    # Usuário escolheu pelo número
+                    tema_escolhido = st.session_state.subtemas_lista[indice - 1]
+                    st.session_state.dados['tema_escolhido'] = tema_escolhido
+                else:
+                    st.error("Número fora do intervalo! Digite um número de 1 a 10 ou um novo texto.")
+                    st.stop()
+            else:
+                # Usuário digitou um texto (novo tema)
+                st.session_state.dados['tema_escolhido'] = escolha_input
+            
+            # Avança para o próximo passo
+            st.session_state.step = 3
+            st.rerun()
+        else:
+            st.warning("Por favor, preencha o campo antes de confirmar.")
 
 # --- AGENTE 3: PROBLEMA DE PESQUISA ---
 elif st.session_state.step == 3:
-    st.header("Agente 3: \nProblema de Pesquisa")
-    if "probs" not in st.session_state:
-        prompt = f"Para o tema {st.session_state.dados['tema_escolhido']}, crie 5 sugestões de 'Problema de pesquisa'."
-        st.session_state.probs = call_gpt(prompt)
+    st.header("Agente 3: Problema de Pesquisa")
+    
+    # UX: Exibe as escolhas anteriores para manter o contexto
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        st.info(f"**Tema Base (Passo 1):**\n\n{st.session_state.dados.get('tema_base', '')}")
+    with col_c2:
+        st.success(f"**Subtema Escolhido (Passo 2):**\n\n{st.session_state.dados.get('tema_escolhido', '')}")
+    
+    st.divider()
 
-    st.markdown(st.session_state.probs)
-    prob_input = st.text_area("Escolha ou digite o Problema de Pesquisa:")
+    # Lógica de geração de problemas
+    if "probs_texto_bruto" not in st.session_state:
+        with st.spinner("Formulando problemas de pesquisa..."):
+            prompt = f"""Para o tema específico '{st.session_state.dados['tema_escolhido']}', 
+            crie 5 sugestões de 'Problema de pesquisa' em formato de pergunta.
+            
+            Output:
+            Apresente exatamente 5 problemas, em lista numerada (1 a 5).
+            Utilize linguagem acadêmica formal e rigorosa."""
+            
+            res_bruta = call_gpt(prompt)
+            st.session_state.probs_texto_bruto = res_bruta
+            
+            # Processamento para extrair apenas o texto das perguntas
+            linhas = res_bruta.strip().split('\n')
+            st.session_state.probs_lista = [
+                l.split('.', 1)[-1].strip() for l in linhas 
+                if l.strip() and l[0].isdigit()
+            ]
+
+    # Exibe as sugestões da IA
+    st.markdown("### Sugestões de Problemas de Pesquisa")
+    st.markdown(st.session_state.probs_texto_bruto)
+    st.divider()
+
+    # Entrada Híbrida
+    prob_input = st.text_area(
+        "Escolha uma opção:", 
+        placeholder="Digite o NÚMERO da pergunta desejada OU escreva seu próprio PROBLEMA DE PESQUISA completo aqui:"
+    )
+
     if st.button("Confirmar Problema"):
-        st.session_state.dados['problema_pesquisa'] = prob_input
-        st.session_state.step = 4
-        st.rerun()
+        if prob_input.strip():
+            # Verifica se é um número
+            if prob_input.isdigit():
+                indice = int(prob_input)
+                if 1 <= indice <= len(st.session_state.probs_lista):
+                    # Seleciona a pergunta correspondente
+                    st.session_state.dados['problema_pesquisa'] = st.session_state.probs_lista[indice - 1]
+                    st.session_state.step = 4
+                    st.rerun()
+                else:
+                    st.error(f"Número inválido. Escolha entre 1 e {len(st.session_state.probs_lista)}.")
+            else:
+                # Trata como novo texto digitado
+                st.session_state.dados['problema_pesquisa'] = prob_input
+                st.session_state.step = 4
+                st.rerun()
+        else:
+            st.warning("Por favor, selecione um número ou digite seu problema.")
 
 # --- AGENTE 4: OBJETIVOS ---
 elif st.session_state.step == 4:
     st.header("Agente 4: Objetivos Específicos")
-    if "lista_objs" not in st.session_state:
-        prompt = f"Para o tema {st.session_state.dados['tema_escolhido']} e problema {st.session_state.dados['problema_pesquisa']}, sugira 10 objetivos específicos."
-        res = call_gpt(prompt)
-        st.session_state.lista_objs = [l.strip() for l in res.split('\n') if l.strip() and any(c.isdigit() for c in l[:3])]
 
+    # --- PAINEL DE CONTEXTO (Escolhas anteriores) ---
+    st.markdown("### Resumo das definições anteriores")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info(f"**1. Tema Base**\n\n{st.session_state.dados.get('tema_base', '')}")
+    with c2:
+        st.success(f"**2. Subtema**\n\n{st.session_state.dados.get('tema_escolhido', '')}")
+    with c3:
+        st.warning(f"**3. Problema**\n\n{st.session_state.dados.get('problema_pesquisa', '')}")
+    
+    st.divider()
+
+    # Lógica Original de Geração
+    if "lista_objs" not in st.session_state:
+        with st.spinner("Gerando sugestões de objetivos..."):
+            prompt = f"Para o tema {st.session_state.dados['tema_escolhido']} e problema {st.session_state.dados['problema_pesquisa']}, sugira 10 objetivos específicos."
+            res = call_gpt(prompt)
+            # Mantendo sua lógica de parsing original do arquivo app3.py
+            st.session_state.lista_objs = [l.strip() for l in res.split('\n') if l.strip() and any(c.isdigit() for c in l[:3])]
+
+    st.markdown("### Selecione os objetivos que farão parte do seu trabalho:")
+    
+    # Lógica Original de Seleção (Checkboxes)
     selecionados = []
     for i, obj in enumerate(st.session_state.lista_objs):
         if st.checkbox(obj, key=f"obj_{i}"):
             selecionados.append(obj)
             
     if st.button("Confirmar Objetivos"):
-        st.session_state.dados['objetivos'] = "\n".join(selecionados)
-        st.session_state.step = 5
-        st.rerun()
+        if selecionados:
+            st.session_state.dados['objetivos'] = "\n".join(selecionados)
+            st.session_state.step = 5
+            st.rerun()
+        else:
+            st.warning("Selecione ao menos um objetivo antes de avançar.")
 
 # --- AGENTE 5 & 6: REFERÊNCIAS ---
 elif st.session_state.step == 5:
