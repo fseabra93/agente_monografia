@@ -262,101 +262,124 @@ elif st.session_state.step == 4:
         else:
             st.warning("Selecione ao menos um objetivo antes de avançar.")
 
-# --- AGENTE 5 & 6: REFERÊNCIAS ---
+# # --- AGENTE 5 & 6: REFERÊNCIAS E ESTRATÉGIA ---
 elif st.session_state.step == 5:
-    st.header("Agentes 5 e 6: Levantamento Bibliográfico")
+    st.header("Agentes 5 e 6: Curadoria e Estratégia de Pesquisa")
     
-    with st.spinner("Buscando referências clássicas e gerando estratégia de busca..."):
-        # Agente 5 (Referencial Clássico)
-        p5 = f"""Quero escrever uma monografia que será uma revisão da literatura sobre o tema {st.session_state.dados['tema_escolhido']} 
-        trabalhando o problema de pesquisa {st.session_state.dados['problema_pesquisa']} com os seguintes objetivos específicos: 
-        {st.session_state.dados['objetivos']}. Quais os trabalhos mais clássicos sobre o tema, que eu não posso deixar de 
-        referenciar, e os autores mais importantes na atualidade?"""
-        st.session_state.dados['ref_classicas'] = call_gpt(p5)
+    # --- PAINEL DE CONTEXTO ACUMULADO (Dashboard de Revisão) ---
+    st.markdown("### 📋 Resumo Consolidado do Projeto")
+    c1, c2, c3 = st.columns(3)
+    with c1: st.info(f"**Tema/Subtema**\n\n{st.session_state.dados.get('tema_escolhido', '')}")
+    with c2: st.success(f"**Problema**\n\n{st.session_state.dados.get('problema_pesquisa', '')}")
+    with c3: st.warning(f"**Objetivos**\n\n{st.session_state.dados.get('objetivos', '')}")
+    st.divider()
 
-        # Agente 6 (Estratégia Atualizada conforme seu novo prompt)
-        ano_atual = datetime.now().year
-        ano_inicial = ano_atual - 5
-        
-        p6 = f"""Atue como um especialista em metodologia de pesquisa acadêmica. Estou desenvolvendo uma revisão bibliográfica para minha monografia. Me ajude a construir uma estratégia de busca abrangente considerando os seguintes elementos:
-            **Contexto da pesquisa:**
-            - Tema principal: [{st.session_state.dados['tema_escolhido']}]
-            - Problema de pesquisa: [{st.session_state.dados['problema_pesquisa']}]
-            - Objetivos: [{st.session_state.dados['objetivos']}]
+    if "ref_classicas" not in st.session_state.dados:
+        with st.spinner("Construindo base teórica e estratégia de busca..."):
+            # --- Agente 5: Referencial Teórico Categorizado ---
+            p5 = f"""Atue como um bibliotecário acadêmico. Para o tema '{st.session_state.dados['tema_escolhido']}', 
+            identifique os autores seminais (clássicos) e as autoridades contemporâneas.
+            
+            Output desejado:
+            1. Uma tabela Markdown com as colunas: Autor | Obra Principal | Contribuição para o Tema.
+            2. Breve descrição das principais correntes de pensamento identificadas."""
+            
+            st.session_state.dados['ref_classicas'] = call_gpt(p5)
 
-            **Parâmetros da busca:**
-            1. Período temporal: Trabalhos publicados entre o ano {ano_atual} e o ano {ano_inicial}
-            2. Idiomas prioritários: [Português, Inglês, Espanhol]
-            3. Tipos de fontes: [Artigos científicos, teses, dissertações, livros]
-            4. Bases de dados recomendadas: [SciELO, Scopus, Web of Science, PubMed]
+# --- Agente 6: Estratégia Avançada (Validada via DeCS/MeSH) ---
+            ano_atual = datetime.now().year
+            ano_inicial = ano_atual - 5
+            
+            p6 = f"""Atue como um Especialista em Biblioteconomia e Recuperação de Dados. 
+            Sua tarefa é gerar uma estratégia de busca para o tema: '{st.session_state.dados['tema_escolhido']}'.
+            
+            PESQUISA E VALIDAÇÃO:
+            1. Acesse mentalmente ou via ferramentas de busca as bases do DeCS (Descritores em Ciências da Saúde) e MeSH.
+            2. Selecione apenas termos que sejam DESCRITORES CONTROLADOS.
+            
+            Output:
+            - Liste os Descritores encontrados (PT e EN).
+            - Monte as Strings de busca (Booleanas) para PubMed, Google Acadêmico e SciELO.
+            - Defina filtros: {ano_inicial}-{ano_atual}, idiomas PT, EN, ES.
+            
+            Apresente as strings de busca em blocos de código para facilitar a cópia."""
+            
+            st.session_state.dados['ref_atuais'] = call_gpt(p6)
+            
+            st.session_state.step = 6
+            st.rerun()
 
-            **Aspectos a serem cobertos:**
-            - Conceitos-chave e definições atuais
-            - Principais autores e referências seminais recentes
-            - Metodologias predominantes na área
-            - Resultados convergentes e divergentes na literatura
-            - Lacunas identificadas nos estudos atuais
-            - Tendências emergentes e direções futuras de pesquisa
-
-            **Palavras-chave e estratégias booleanas:**
-            Sugira um conjunto de palavras-chave em português e inglês, além de combinações booleanas eficientes (AND, OR, NOT) para refinar a busca.
-
-            **Critérios de seleção:**
-            Indique critérios para inclusão e exclusão de trabalhos na triagem inicial."""
-        
-        st.session_state.dados['ref_atuais'] = call_gpt(p6)
-        
-        st.session_state.step = 6
-        st.rerun()
-
-# --- AGENTE 7: CONSOLIDAÇÃO E PDF (CORRIGIDO) ---
+# --- AGENTE 7: CONSOLIDAÇÃO E PDF ---
 elif st.session_state.step == 6:
-    st.header("Agente 7: Consolidação e PDF")
+    st.header("Agente 7: Consolidação e Exportação")
     
-    ordem = [
-        ('Tema Final', 'tema_escolhido'),
-        ('Problema de Pesquisa', 'problema_pesquisa'),
-        ('Objetivos Específicos', 'objetivos'),
-        ('Referências Clássicas', 'ref_classicas'),
-        ('Referências Atuais', 'ref_atuais')
+    # Processamento dos objetivos para numeração progressiva
+    objetivos_brutos = st.session_state.dados.get('objetivos', '')
+    # Remove números existentes e limpa espaços para re-numerar
+    lista_objetivos = [obj.split('.', 1)[-1].strip() for obj in objetivos_brutos.split('\n') if obj.strip()]
+    objetivos_numerados = ""
+    for idx, obj in enumerate(lista_objetivos, 1):
+        objetivos_numerados += f"{idx}. {obj}\n"
+
+    exibicao_pdf = [
+        ('Tema Principal', st.session_state.dados.get('tema_base', '')),
+        ('Subtema', st.session_state.dados.get('tema_escolhido', '')),
+        ('Problema de Pesquisa', st.session_state.dados.get('problema_pesquisa', '')),
+        ('Objetivos Específicos', objetivos_numerados), # Aqui entra a versão numerada
+        ('Referências Clássicas (Tabela/Autores)', st.session_state.dados.get('ref_classicas', '')),
+        ('Estratégia de Busca (DeCS/MeSH)', st.session_state.dados.get('ref_atuais', ''))
     ]
 
-    for label, chave in ordem:
+    for label, conteudo in exibicao_pdf:
         st.subheader(label)
-        conteudo = st.session_state.dados.get(chave, "")
         st.write(conteudo)
         st.divider()
 
     def criar_pdf():
         pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        # Usando 'helvetica' que é padrão e mais compatível que 'Arial' em algumas versões
-        pdf.set_font("helvetica", 'B', 16)
-        pdf.cell(0, 10, "Plano de Monografia", ln=True, align='C')
+        
+        pdf.set_font("helvetica", 'B', 18)
+        pdf.cell(0, 15, "Plano de Trabalho Academico", ln=True, align='C')
+        pdf.line(10, 25, 200, 25)
         pdf.ln(10)
         
-        for label, chave in ordem:
+        for label, conteudo in exibicao_pdf:
+            pdf.set_fill_color(240, 240, 240)
             pdf.set_font("helvetica", 'B', 12)
-            pdf.cell(0, 10, label.encode('latin-1', 'replace').decode('latin-1'), ln=True)
-            pdf.set_font("helvetica", size=11)
-            txt = str(st.session_state.dados.get(chave, "")).encode('latin-1', 'replace').decode('latin-1')
-            pdf.multi_cell(0, 7, txt)
+            label_pdf = label.encode('latin-1', 'replace').decode('latin-1')
+            pdf.cell(0, 10, label_pdf, ln=True, fill=True)
+            pdf.ln(3)
+            
+            pdf.set_font("helvetica", size=10)
+            # Limpeza de caracteres Markdown que o PDF não suporta
+            texto_limpo = str(conteudo).replace('###', '').replace('**', '').replace('`', '')
+            linhas = texto_limpo.split('\n')
+            
+            for linha in linhas:
+                if '---' in linha and '|' in linha: continue
+                if '|' in linha: linha = linha.replace('|', '  ')
+                
+                txt_pdf = linha.encode('latin-1', 'replace').decode('latin-1')
+                pdf.multi_cell(0, 6, txt_pdf)
+            
             pdf.ln(5)
             
-        # O segredo está aqui: converter explicitamente para bytes
-        return bytes(pdf.output())
+        return pdf.output()
 
     try:
-        pdf_out = criar_pdf()
-        st.download_button(
-            label="📥 Baixar PDF", 
-            data=pdf_out, 
-            file_name="monografia.pdf", 
-            mime="application/pdf"
-        )
+        pdf_bytes = criar_pdf()
+        if pdf_bytes:
+            st.download_button(
+                label="📥 Baixar Plano de Monografia Completo", 
+                data=pdf_bytes, 
+                file_name="plano_monografia.pdf", 
+                mime="application/pdf"
+            )
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"Erro ao gerar o PDF: {e}")
     
-    if st.button("Reiniciar"):
+    if st.button("Reiniciar Sistema"):
         st.session_state.clear()
         st.rerun()
