@@ -2,7 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from fpdf import FPDF
+#from fpdf import FPDF
 from io import BytesIO
 from datetime import datetime
 
@@ -11,7 +11,9 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 st.set_page_config(page_title="Agente Monografias", layout="wide")
-st.title("🎓 Sistema de IA para escolha do tema e estratégia de pesquisa para Monografia")
+st.title("🎓 Sistema de IA para escolha do tema e estratégia de pesquisa para Monografia. v1.1")
+st.markdown("#### Sistema criado por Flávio Seabra (https://www.instagram.com/fs_orientadoracademico/)")
+
 #st.title("")
 
 if "step" not in st.session_state:
