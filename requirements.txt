@@ -1,5 +1,7 @@
 streamlit
 openai
 python-dotenv
-fpdf
-python-docx
+langchain-openai
+langchain-core
+langgraph
+flask

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎓 Orientador IA de Monografias - Premium</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Mono&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CSS Customizado -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <!-- Biblioteca Marked.js para renderizar Markdown da API da OpenAI -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar de Navegação / Progresso -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-graduation-cap logo-icon"></i>
+                <div class="logo-text">
+                    <h1>MonografIA</h1>
+                    <span>Desenvolvido por: Flavio Seabra</span>
+                </div>
+            </div>
+            
+            <nav class="steps-nav">
+                <div class="step-nav-item active" data-step="1" id="nav-step-1">
+                    <span class="step-num">01</span>
+                    <span class="step-name">Definição do Tema</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+                <div class="step-nav-item" data-step="2" id="nav-step-2">
+                    <span class="step-num">02</span>
+                    <span class="step-name">Aprofundamento</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+                <div class="step-nav-item" data-step="3" id="nav-step-3">
+                    <span class="step-num">03</span>
+                    <span class="step-name">Problema de Pesquisa</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+                <div class="step-nav-item" data-step="4" id="nav-step-4">
+                    <span class="step-num">04</span>
+                    <span class="step-name">Objetivos Específicos</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+                <div class="step-nav-item" data-step="5" id="nav-step-5">
+                    <span class="step-num">05</span>
+                    <span class="step-name">Curadoria & Estratégia</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+                <div class="step-nav-item" data-step="6" id="nav-step-6">
+                    <span class="step-num">06</span>
+                    <span class="step-name">Plano Consolidado</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+                <div class="step-nav-item" data-step="8" id="nav-step-8">
+                    <span class="step-num">07</span>
+                    <span class="step-name">Redação Final</span>
+                    <i class="fa-solid fa-circle-check completed-icon"></i>
+                </div>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <p>Versão Web Premium v1.0</p>
+            </div>
+        </aside>
+        
+        <!-- Conteúdo Principal -->
+        <main class="main-content">
+            <header class="app-header">
+                <div class="header-title-container">
+                    <h2 id="current-step-title">Passo 1: Definição do Tema</h2>
+                    <p id="current-step-desc">Digite a área do conhecimento e descreva sua ideia inicial para receber sugestões personalizadas.</p>
+                </div>
+                
+                <!-- Barra de Progresso Superior (Mobile/Desktop) -->
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="progress-bar"></div>
+                </div>
+            </header>
+            
+            <div class="content-body">
+                
+                <!-- PASSO 1: ESCOLHA DO TEMA -->
+                <section class="step-section active" id="section-step-1">
+                    <div class="grid-2col">
+                        <div class="input-card">
+                            <h3><i class="fa-solid fa-book-open"></i> Contexto da Monografia</h3>
+                            <div class="form-group">
+                                <label for="area-input">Área de Conhecimento</label>
+                                <input type="text" id="area-input" placeholder="Ex: Psicologia Organizacional, Engenharia de Software...">
+                            </div>
+                            <div class="form-group">
+                                <label for="ideia-input">Descreva sua ideia ou interesse inicial</label>
+                                <textarea id="ideia-input" rows="8" placeholder="Escreva o mais detalhadamente possível o que você imagina para o trabalho. A IA usará essas informações para criar propostas sólidas."></textarea>
+                            </div>
+                            
+                            <div class="action-buttons-group">
+                                <button class="btn btn-primary" id="btn-gerar-temas">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Gerar Sugestões Iniciais
+                                </button>
+                                <button class="btn btn-secondary hidden" id="btn-gerar-mais-temas">
+                                    <i class="fa-solid fa-plus"></i> Gerar +10 Sugestões
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="results-card empty" id="temas-container-wrapper">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-lightbulb empty-icon"></i>
+                                <h4>Aguardando dados...</h4>
+                                <p>Preencha os campos ao lado e clique em "Gerar Sugestões Iniciais" para começar.</p>
+                            </div>
+                            
+                            <div class="results-content hidden">
+                                <h3><i class="fa-solid fa-list-check"></i> Sugestões de Temas</h3>
+                                <p class="info-badge" id="temas-count-badge">0 sugestões geradas até agora.</p>
+                                
+                                <div class="options-grid" id="temas-options">
+                                    <!-- Inserido dinamicamente via JS -->
+                                </div>
+                                
+                                <div class="custom-selection-group">
+                                    <label for="custom-tema-input">Ou refine o tema selecionado (ou digite um novo):</label>
+                                    <input type="text" id="custom-tema-input" placeholder="Ajuste o tema aqui se desejar...">
+                                </div>
+                                
+                                <div class="step-nav-buttons">
+                                    <button class="btn btn-success" id="btn-avancar-step-2">
+                                        Avançar para Aprofundamento <i class="fa-solid fa-arrow-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- PASSO 2: APROFUNDAMENTO -->
+                <section class="step-section" id="section-step-2">
+                    <div class="context-banner">
+                        <span class="context-label">Tema Base Selecionado:</span>
+                        <h4 id="display-tema-base">---</h4>
+                    </div>
+                    
+                    <div class="results-card" id="subtemas-container-wrapper">
+                        <h3><i class="fa-solid fa-magnifying-glass-chart"></i> Subtemas e Recortes Específicos</h3>
+                        <p class="section-instructions">Selecione um dos subtemas propostos abaixo para delimitar o escopo da sua revisão integrativa de literatura:</p>
+                        
+                        <div class="options-grid" id="subtemas-options">
+                            <!-- Inserido dinamicamente via JS -->
+                        </div>
+                        
+                        <div class="custom-selection-group">
+                            <label for="custom-subtema-input">Ou refine o subtema selecionado (ou digite um novo):</label>
+                            <input type="text" id="custom-subtema-input" placeholder="Ajuste o subtema aqui se desejar...">
+                        </div>
+                        
+                        <div class="step-nav-buttons justify-between">
+                            <button class="btn btn-outline" id="btn-voltar-step-1">
+                                <i class="fa-solid fa-arrow-left"></i> Voltar
+                            </button>
+                            <div class="flex-gap">
+                                <button class="btn btn-secondary" id="btn-manter-tema-original">
+                                    <i class="fa-solid fa-forward"></i> Manter Tema Original
+                                </button>
+                                <button class="btn btn-success" id="btn-avancar-step-3">
+                                    Confirmar Subtema & Avançar <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- PASSO 3: PROBLEMA DE PESQUISA -->
+                <section class="step-section" id="section-step-3">
+                    <div class="grid-2col-compact">
+                        <div class="info-pill-card warning">
+                            <span class="info-pill-title">Tema Base:</span>
+                            <p id="display-step3-tema-base">---</p>
+                        </div>
+                        <div class="info-pill-card success">
+                            <span class="info-pill-title">Subtema/Recorte Selecionado:</span>
+                            <p id="display-step3-subtema">---</p>
+                        </div>
+                    </div>
+                    
+                    <div class="results-card" id="problemas-container-wrapper">
+                        <h3><i class="fa-solid fa-circle-question"></i> Formulação do Problema de Pesquisa</h3>
+                        <p class="section-instructions">Selecione a pergunta norteadora ideal para guiar as buscas e a análise bibliográfica do seu TCC:</p>
+                        
+                        <div class="options-grid" id="problemas-options">
+                            <!-- Inserido dinamicamente via JS -->
+                        </div>
+                        
+                        <div class="custom-selection-group">
+                            <label for="custom-problema-input">Ou edite ou escreva sua própria pergunta de pesquisa:</label>
+                            <textarea id="custom-problema-input" rows="3" placeholder="Escreva ou edite a pergunta de pesquisa aqui..."></textarea>
+                        </div>
+                        
+                        <div class="step-nav-buttons justify-between">
+                            <button class="btn btn-outline" id="btn-voltar-step-2">
+                                <i class="fa-solid fa-arrow-left"></i> Voltar
+                            </button>
+                            <button class="btn btn-success" id="btn-avancar-step-4">
+                                Confirmar Problema & Avançar <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- PASSO 4: OBJETIVOS ESPECÍFICOS -->
+                <section class="step-section" id="section-step-4">
+                    <div class="grid-3col-compact">
+                        <div class="info-pill-card">
+                            <span class="info-pill-title">Tema Base:</span>
+                            <p id="display-step4-tema-base">---</p>
+                        </div>
+                        <div class="info-pill-card success">
+                            <span class="info-pill-title">Subtema:</span>
+                            <p id="display-step4-subtema">---</p>
+                        </div>
+                        <div class="info-pill-card warning">
+                            <span class="info-pill-title">Problema de Pesquisa:</span>
+                            <p id="display-step4-problema">---</p>
+                        </div>
+                    </div>
+                    
+                    <div class="results-card" id="objetivos-container-wrapper">
+                        <h3><i class="fa-solid fa-bullseye"></i> Objetivos Específicos do Trabalho</h3>
+                        <p class="section-instructions">Selecione múltiplos objetivos específicos para estruturar operacionalmente a sua monografia (recomenda-se de 3 a 5 objetivos):</p>
+                        
+                        <div class="checkbox-options-list" id="objetivos-options">
+                            <!-- Inserido dinamicamente via JS -->
+                        </div>
+                        
+                        <div class="step-nav-buttons justify-between">
+                            <button class="btn btn-outline" id="btn-voltar-step-3">
+                                <i class="fa-solid fa-arrow-left"></i> Voltar
+                            </button>
+                            <button class="btn btn-success" id="btn-avancar-step-5">
+                                Confirmar Objetivos & Avançar <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- PASSO 5: CURADORIA & ESTRATÉGIA DE PESQUISA -->
+                <section class="step-section" id="section-step-5">
+                    <div class="grid-3col-compact">
+                        <div class="info-pill-card">
+                            <span class="info-pill-title">Recorte de Pesquisa:</span>
+                            <p id="display-step5-subtema">---</p>
+                        </div>
+                        <div class="info-pill-card warning">
+                            <span class="info-pill-title">Pergunta:</span>
+                            <p id="display-step5-problema">---</p>
+                        </div>
+                        <div class="info-pill-card success">
+                            <span class="info-pill-title">Objetivos Selecionados:</span>
+                            <p id="display-step5-objetivos-count">0 objetivos selecionados</p>
+                        </div>
+                    </div>
+                    
+                    <div class="results-card" id="estrategia-container-wrapper">
+                        <h3><i class="fa-solid fa-network-wired"></i> Curadoria de Referencial e Estratégia de Busca</h3>
+                        <p class="section-instructions">Aguardando a inteligência artificial mapear as bases e montar o referencial...</p>
+                        
+                        <div class="dual-output-layout hidden" id="estrategia-outputs">
+                            <div class="tab-header">
+                                <button class="tab-btn active" data-tab="ref-teorico">
+                                    <i class="fa-solid fa-book"></i> Referencial Teórico (Agente 5)
+                                </button>
+                                <button class="tab-btn" data-tab="ref-estrategia">
+                                    <i class="fa-solid fa-search"></i> Estratégia de Busca (Agente 6)
+                                </button>
+                            </div>
+                            
+                            <div class="tab-content active" id="tab-ref-teorico">
+                                <div class="markdown-body" id="ref-teorico-rendered">
+                                    <!-- Renderizado Markdown via JS -->
+                                </div>
+                            </div>
+                            
+                            <div class="tab-content" id="tab-ref-estrategia">
+                                <div class="markdown-body" id="ref-estrategia-rendered">
+                                    <!-- Renderizado Markdown via JS -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="step-nav-buttons justify-between">
+                            <button class="btn btn-outline" id="btn-voltar-step-4">
+                                <i class="fa-solid fa-arrow-left"></i> Voltar
+                            </button>
+                            <button class="btn btn-success hidden" id="btn-avancar-step-6">
+                                Ir para Resumo & Consolidação <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- PASSO 6: PLANO CONSOLIDADO E EXPORTAÇÃO -->
+                <section class="step-section" id="section-step-6">
+                    <div class="results-card">
+                        <div class="flex-header-actions">
+                            <h3><i class="fa-solid fa-file-invoice"></i> Plano de Trabalho Acadêmico Final</h3>
+                            <div class="action-buttons-row">
+                                <button class="btn btn-primary" id="btn-download-plano">
+                                    <i class="fa-solid fa-download"></i> Baixar Plano (.md)
+                                </button>
+                                <button class="btn btn-success btn-glow" id="btn-gerar-monografia-abnt">
+                                    <i class="fa-solid fa-feather-pointed"></i> Criar Estrutura da Monografia
+                                </button>
+                            </div>
+                        </div>
+                        <p class="section-instructions">Revise o plano de trabalho consolidado. Você pode baixar em Markdown ou prosseguir para a redação completa com base nas diretrizes geradas.</p>
+                        
+                        <hr class="card-divider">
+                        
+                        <div class="document-preview-container">
+                            <div class="markdown-body" id="plano-consolidado-rendered">
+                                <!-- Renderizado via JS -->
+                            </div>
+                        </div>
+                        
+                        <div class="step-nav-buttons justify-between margin-top-lg">
+                            <button class="btn btn-outline" id="btn-voltar-step-5">
+                                <i class="fa-solid fa-arrow-left"></i> Voltar para Ajustes
+                            </button>
+                            <button class="btn btn-danger" id="btn-reiniciar-fluxo">
+                                <i class="fa-solid fa-rotate-left"></i> Reiniciar Orientador
+                            </button>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- PASSO 8: REDAÇÃO DA MONOGRAFIA -->
+                <section class="step-section" id="section-step-8">
+                    <div class="results-card">
+                        <div class="flex-header-actions">
+                            <h3><i class="fa-solid fa-pen-nib"></i> Redação da Monografia Completa</h3>
+                            <div class="action-buttons-row">
+                                <button class="btn btn-primary" id="btn-download-monografia">
+                                    <i class="fa-solid fa-download"></i> Baixar Monografia (.md)
+                                </button>
+                            </div>
+                        </div>
+                        <p class="section-instructions">A monografia foi estruturada de acordo com as normas da ABNT e as diretrizes do plano de trabalho de referência.</p>
+                        
+                        <hr class="card-divider">
+                        
+                        <div class="document-preview-container bg-academic">
+                            <div class="markdown-body" id="monografia-final-rendered">
+                                <!-- Renderizado via JS -->
+                            </div>
+                        </div>
+                        
+                        <div class="step-nav-buttons justify-between margin-top-lg">
+                            <button class="btn btn-outline" id="btn-voltar-plano-step-6">
+                                <i class="fa-solid fa-arrow-left"></i> Voltar ao Plano de Trabalho
+                            </button>
+                            <button class="btn btn-danger" id="btn-reiniciar-fluxo-2">
+                                <i class="fa-solid fa-rotate-left"></i> Iniciar Novo Trabalho
+                            </button>
+                        </div>
+                    </div>
+                </section>
+                
+            </div>
+        </main>
+    </div>
+    
+    <!-- Modal/Overlay de Loading Premium com Efeitos Visuais -->
+    <div class="loading-overlay hidden" id="loading-overlay">
+        <div class="loading-card">
+            <div class="loading-animation">
+                <div class="spinner-circle"></div>
+                <i class="fa-solid fa-brain brain-pulsing"></i>
+            </div>
+            <h3 id="loading-title">O orientador IA está redigindo...</h3>
+            <p id="loading-message">Isso pode levar alguns instantes. Estamos estruturando o conhecimento acadêmico.</p>
+            
+            <div class="loading-progress-track">
+                <div class="loading-progress-bar" id="loading-progress-fill"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Script Principal -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,385 +1,463 @@
 import streamlit as st
-from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from fpdf import FPDF
-from io import BytesIO
 from datetime import datetime
+from typing import TypedDict, List, Annotated
+import operator
+
+# LangChain & LangGraph Imports
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.graph import StateGraph, END
 
 # 1. Configurações Iniciais
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-st.set_page_config(page_title="Agente Monografia", layout="wide")
-st.title("🎓 Sistema de IA para Monografia")
-st.title("Parte 1 - Escolha do tema, estratégia de pesquisa e cronograma")
+# Configuração da Página
+st.set_page_config(page_title="Agente Monografias (LangGraph)", layout="wide")
+st.title("🎓 Sistema de IA para escolha do tema e estratégia (LangGraph Edition)")
 
-if "step" not in st.session_state:
-    st.session_state.step = 1
-if "dados" not in st.session_state:
-    st.session_state.dados = {}
+# --- DEFINIÇÃO DO ESTADO DO AGENTE (LangGraph) ---
+class AgentState(TypedDict):
+    # Inputs do Usuário
+    area_conhecimento: str
+    ideia_bruta: str
+    
+    # Controle de Fluxo
+    step_atual: str  # 'temas', 'subtemas', 'problema', 'objetivos', 'referencias'
+    
+    # Dados Gerados/Selecionados
+    lista_temas_sugeridos: Annotated[List[str], operator.add] # Permite acumular temas
+    tema_selecionado: str
+    
+    lista_subtemas: List[str]
+    subtema_selecionado: str
+    
+    lista_problemas: List[str]
+    problema_selecionado: str
+    
+    lista_objetivos: List[str]
+    objetivos_selecionados: str # String consolidada
+    
+    ref_teorica: str
+    ref_estrategia: str
 
-def call_gpt(prompt):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o", 
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Erro na API: {e}"
+# --- INICIALIZAÇÃO DO LLM ---
+# Nota: gpt-5.1 ainda não é público/estável. Mudei para gpt-4o para garantir funcionamento.
+llm = ChatOpenAI(model="gpt-5.1", temperature=0.2, api_key=os.getenv("OPENAI_API_KEY"))
 
-area = ""
+# --- DEFINIÇÃO DOS NÓS (NODES) DO GRAFO ---
 
-# --- AGENTE 1: ESCOLHA DO TEMA ---
-if st.session_state.step == 1:
+def node_gerar_temas(state: AgentState):
+    """Agente 1: Gera sugestões de temas"""
+    area = state['area_conhecimento']
+    ideia = state['ideia_bruta']
+    
+    # Contexto de exclusão (se já houver temas na lista, não repetir)
+    exclusao = "\n".join(state.get('lista_temas_sugeridos', []))
+    contexto_exclusao = f"\nNÃO repita nenhum destes temas:\n{exclusao}" if exclusao else ""
+
+    prompt = f"""Você é um especialista em metodologia de pesquisa científica com ampla experiência 
+            em orientação de trabalhos de conclusão de curso na área de {area}.
+
+            Sua tarefa é sugerir temas viáveis para uma monografia no formato de revisão 
+            integrativa da literatura.
+
+            Contexto fornecido pelo estudante:
+            - Área de conhecimento: {area}
+            - Ideia ou interesse inicial: {ideia}
+
+            Critérios para os temas sugeridos:
+            - Devem ser adequados ao escopo de uma revisão integrativa.
+            - Devem ser formulados como títulos acadêmicos.
+            - Devem estar alinhados com o interesse inicial.
+
+            {contexto_exclusao}
+
+            Gere exatamente 10 sugestões de temas, apresentadas em lista numerada de 1 a 10, 
+            contendo apenas os títulos, sem explicações."""
+    
+    response = llm.invoke([HumanMessage(content=prompt)])
+    content = response.content
+    
+    # Parsing
+    linhas = content.strip().split('\n')
+    novos_temas = [l.split('.', 1)[-1].strip() for l in linhas if l.strip() and l[0].isdigit()]
+    
+    return {"lista_temas_sugeridos": novos_temas}
+
+def node_aprofundamento(state: AgentState):
+    """Agente 2: Gera subtemas"""
+    tema_base = state['tema_selecionado']
+    area = state['area_conhecimento']
+    
+    prompt = f"""
+            Você é um especialista em revisões integrativas na área de {area}.
+            Tema central: {tema_base}
+
+            Sua tarefa é mapear 10 subtemas (recortes específicos) para este tema.
+            
+            Output:
+            Lista numerada de 1 a 10.
+            Formato: {{título do subtema}}: {{justificativa}}
+            """
+    
+    response = llm.invoke([HumanMessage(content=prompt)])
+    content = response.content
+    
+    # Parsing
+    subtemas = [l.split('.', 1)[-1].strip() if '.' in l[:3] else l.strip() 
+                for l in content.strip().split('\n') if l.strip()]
+    
+    return {"lista_subtemas": subtemas}
+
+def node_problema_pesquisa(state: AgentState):
+    """Agente 3: Formula problemas de pesquisa"""
+    subtema = state['subtema_selecionado']
+    
+    prompt = f"""Você é um especialista em metodologia.
+                Tema escolhido: {subtema}
+
+                Formule 10 problemas de pesquisa (perguntas) para uma revisão integrativa.
+                Gere apenas as perguntas em lista numerada."""
+    
+    response = llm.invoke([HumanMessage(content=prompt)])
+    content = response.content
+    
+    probs = [l.split('.', 1)[-1].strip() if '.' in l[:3] else l.strip() 
+             for l in content.strip().split('\n') if l.strip()]
+    
+    return {"lista_problemas": probs}
+
+def node_objetivos(state: AgentState):
+    """Agente 4: Gera objetivos específicos"""
+    subtema = state['subtema_selecionado']
+    problema = state['problema_selecionado']
+    
+    prompt = f"""Contexto:
+                Tema: {subtema}
+                Problema: {problema}
+
+                Sugira 10 objetivos específicos para uma revisão integrativa.
+                Verbos no infinitivo.
+                Lista numerada de 1 a 10.
+                Formato: Objetivo - Justificativa."""
+
+    response = llm.invoke([HumanMessage(content=prompt)])
+    content = response.content
+    
+    objs = [l.strip() for l in content.split('\n') if l.strip() and any(c.isdigit() for c in l[:3])]
+    
+    return {"lista_objetivos": objs}
+
+def node_referencias_estrategia(state: AgentState):
+    """Agentes 5 e 6: Gera referencial e estratégia de busca"""
+    tema = state['subtema_selecionado']
+    area = state['area_conhecimento']
+    ano_atual = datetime.now().year
+    ano_inicial = ano_atual - 5
+
+    # Parte 1: Referencial Teórico
+    p5 = f"""Você é especialista em {area}.
+            Tema: {tema}
+            
+            PARTE 1: Gere uma tabela Markdown (Autor | Obra | Período | Contribuição) com 8-12 referências clássicas e contemporâneas.
+            PARTE 2: Escreva 2-3 parágrafos sobre as principais correntes teóricas."""
+    
+    resp_teorica = llm.invoke([HumanMessage(content=p5)])
+
+    # Parte 2: Estratégia de Busca
+    p6 = f"""Especialista em Biblioteconomia.
+            Tema: {tema}
+            Período: {ano_inicial}-{ano_atual}.
+            
+            Crie uma estratégia de busca (Strings para PubMed, SciELO, Lilacs, Google Scholar) e sugira descritores (DeCS/MeSH)."""
+    
+    resp_estrategia = llm.invoke([HumanMessage(content=p6)])
+    
+    return {
+        "ref_teorica": resp_teorica.content,
+        "ref_estrategia": resp_estrategia.content
+    }
+
+# --- CONSTRUÇÃO DO GRAFO ---
+
+workflow = StateGraph(AgentState)
+
+# Adiciona os nós
+workflow.add_node("gerar_temas", node_gerar_temas)
+workflow.add_node("gerar_subtemas", node_aprofundamento)
+workflow.add_node("gerar_problemas", node_problema_pesquisa)
+workflow.add_node("gerar_objetivos", node_objetivos)
+workflow.add_node("gerar_referencias", node_referencias_estrategia)
+
+# Define o Router (Ponto de Entrada Dinâmico)
+# Como o Streamlit é orientado a eventos, definimos qual nó executar com base no 'step_atual'
+def route_step(state: AgentState):
+    step = state['step_atual']
+    if step == 'temas':
+        return "gerar_temas"
+    elif step == 'subtemas':
+        return "gerar_subtemas"
+    elif step == 'problema':
+        return "gerar_problemas"
+    elif step == 'objetivos':
+        return "gerar_objetivos"
+    elif step == 'referencias':
+        return "gerar_referencias"
+    return END
+
+workflow.set_conditional_entry_point(
+    route_step,
+    {
+        "gerar_temas": "gerar_temas",
+        "gerar_subtemas": "gerar_subtemas",
+        "gerar_problemas": "gerar_problemas",
+        "gerar_objetivos": "gerar_objetivos",
+        "gerar_referencias": "gerar_referencias"
+    }
+)
+
+# Todos os nós finalizam a execução após rodar (retornam ao Streamlit para input do usuário)
+workflow.add_edge("gerar_temas", END)
+workflow.add_edge("gerar_subtemas", END)
+workflow.add_edge("gerar_problemas", END)
+workflow.add_edge("gerar_objetivos", END)
+workflow.add_edge("gerar_referencias", END)
+
+app_graph = workflow.compile()
+
+# --- INTEGRAÇÃO COM STREAMLIT ---
+
+if "step_visual" not in st.session_state:
+    st.session_state.step_visual = 1
+
+# Inicializa state_data se não existir (Persistência manual simples para o Streamlit)
+if "state_data" not in st.session_state:
+    st.session_state.state_data = {
+        "area_conhecimento": "",
+        "ideia_bruta": "",
+        "step_atual": "",
+        "lista_temas_sugeridos": [],
+        "tema_selecionado": "",
+        "lista_subtemas": [],
+        "subtema_selecionado": "",
+        "lista_problemas": [],
+        "problema_selecionado": "",
+        "lista_objetivos": [],
+        "objetivos_selecionados": "",
+        "ref_teorica": "",
+        "ref_estrategia": ""
+    }
+
+# Atalho para acesso fácil aos dados
+dados = st.session_state.state_data
+
+# --- UI: PASSO 1 (TEMAS) ---
+if st.session_state.step_visual == 1:
     st.header("Passo 1: Definição do Tema")
-    st.subheader("Digite sua área e descreva uma ideia inicial para começarmos")
+    st.markdown("---")
     
-    st.markdown("---") # Uma linha horizontal para separar o cabeçalho do formulário
-    
-    # Interface de entrada dupla
-    col1, col2 = st.columns(2)
-    with col1:
-        area = st.text_input("Área do Conhecimento", placeholder="Ex: Psicologia Organizacional")
-    with col2:
-        # Usamos o markdown para criar o rótulo com quebras de linha
-        st.markdown("Descreva sua ideia<br>Lembre-se que eu sou uma IA, descreva o mais detalhado possível.", unsafe_allow_html=True)
-
-        # Criamos o text_area com label_visibility="collapsed" para não repetir o título
-        ideia_bruta = st.text_area(
-            label="Descricao", 
-            label_visibility="collapsed",
-            placeholder="Ex: Quero falar sobre..."
-        )
-    if st.button("Gerar Sugestões"):
-        with st.spinner("O orientador IA está redigindo os temas..."):
-            # Lógica de prioridade e seleção de prompt
-            if ideia_bruta.strip():
-                # Prompt para quando o usuário já tem uma ideia
-                prompt = f"""Você atua como orientador acadêmico experiente. 
-                O usuário propôs a seguinte ideia: {ideia_bruta} na área de {area}.
-                Refine esta ideia e gere 10 opções de temas de monografia para uma revisão integrativa da literatura.
-                Output: Apresente exatamente 10 temas, em lista numerada (1 a 10), apenas os títulos, sem comentários."""
-            else:
-                # Prompt original baseado na área
-                prompt = f"""Você atua como orientador acadêmico experiente. 
-                Gere 10 opções de temas de monografia a partir da área {area} para uma revisão integrativa da literatura.
-                Output: Apresente exatamente 10 temas, em lista numerada (1 a 10), apenas os títulos, sem comentários."""
-            
-            resposta = call_gpt(prompt)
-            # Transformar a string da API em uma lista real de Python para o st.radio
-            linhas = resposta.strip().split('\n')
-            # Limpar números e pontos (ex: "1. Tema" -> "Tema")
-            temas_limpos = [l.split('.', 1)[-1].strip() for l in linhas if l.strip()]
-            st.session_state.lista_temas_sugeridos = temas_limpos
-        st.rerun()
-
-    # Se já houver temas gerados, exibe o rádio para seleção
-    if "lista_temas_sugeridos" in st.session_state:
-        st.info("Selecione o tema que mais lhe agrada:")
-        
-        tema_selecionado = st.radio(
-            "Temas sugeridos:",
-            st.session_state.lista_temas_sugeridos,
-            index=None, # Inicia sem nada selecionado
-            help="Escolha um dos temas gerados pela IA"
-        )
-        
-        outra_opcao = st.text_input("Ou digite seu próprio tema caso queira ajustar algum detalhe:")
-        
-        if st.button("Avançar para Aprofundamento"):
-            # Prioriza o texto manual se preenchido, senão usa o rádio
-            escolha_final = outra_opcao if outra_opcao.strip() else tema_selecionado
-            
-            if escolha_final:
-                st.session_state.dados['tema_base'] = escolha_final
-                st.session_state.step = 2
-                st.rerun()
-            else:
-                st.warning("Por favor, selecione um tema ou digite um antes de avançar.")
-
-# --- AGENTE 2: APROFUNDAMENTO ---
-elif st.session_state.step == 2:
-    st.header("Agente 2: Aprofundamento do Tema")
-    
-    # Exibe o tema base para orientação
-    st.info(f"**Tema Base Selecionado:** {st.session_state.dados['tema_base']}")
-    st.divider()
-
-    if "subtemas_lista" not in st.session_state:
-        with st.spinner("O orientador está gerando subtemas específicos..."):
-            prompt = f"""Você é um professor universitário. 
-            Apresente 10 sugestões de subtemas específicos para uma revisão da literatura 
-            baseada no tema: {st.session_state.dados['tema_base']}.
-            
-            Output:
-            Apresente exatamente 10 itens em uma lista numerada (1 a 10).
-            Cada item deve conter o título do tema seguido de uma breve explicação.
-            Use linguagem acadêmica formal."""
-            
-            res = call_gpt(prompt)
-            # Armazenamos a string bruta para exibição e processamos para a lógica
-            st.session_state.subtemas_texto_bruto = res
-            linhas = res.strip().split('\n')
-            # Extraímos apenas o texto após o "1. " para facilitar o resgate depois
-            st.session_state.subtemas_lista = [l.split('.', 1)[-1].strip() for l in linhas if l.strip() and l[0].isdigit()]
-
-    # Exibe a lista numerada para o usuário ver os números
-    st.markdown(st.session_state.subtemas_texto_bruto)
-    
-    st.divider()
-    
-    # Caixa de entrada única para número ou texto
-    escolha_input = st.text_input(
-        "Digite o NÚMERO do tema desejado OU escreva um NOVO tema do zero:",
-        placeholder="Ex: 5 ou 'A influência da IA na educação básica'"
-    )
-
-    if st.button("Confirmar Escolha"):
-        if escolha_input.strip():
-            # Tenta verificar se o input é um número entre 1 e 10
-            if escolha_input.isdigit():
-                indice = int(escolha_input)
-                if 1 <= indice <= len(st.session_state.subtemas_lista):
-                    # Usuário escolheu pelo número
-                    tema_escolhido = st.session_state.subtemas_lista[indice - 1]
-                    st.session_state.dados['tema_escolhido'] = tema_escolhido
-                else:
-                    st.error("Número fora do intervalo! Digite um número de 1 a 10 ou um novo texto.")
-                    st.stop()
-            else:
-                # Usuário digitou um texto (novo tema)
-                st.session_state.dados['tema_escolhido'] = escolha_input
-            
-            # Avança para o próximo passo
-            st.session_state.step = 3
-            st.rerun()
-        else:
-            st.warning("Por favor, preencha o campo antes de confirmar.")
-
-# --- AGENTE 3: PROBLEMA DE PESQUISA ---
-elif st.session_state.step == 3:
-    st.header("Agente 3: Problema de Pesquisa")
-    
-    # UX: Exibe as escolhas anteriores para manter o contexto
-    col_c1, col_c2 = st.columns(2)
-    with col_c1:
-        st.info(f"**Tema Base (Passo 1):**\n\n{st.session_state.dados.get('tema_base', '')}")
-    with col_c2:
-        st.success(f"**Subtema Escolhido (Passo 2):**\n\n{st.session_state.dados.get('tema_escolhido', '')}")
-    
-    st.divider()
-
-    # Lógica de geração de problemas
-    if "probs_texto_bruto" not in st.session_state:
-        with st.spinner("Formulando problemas de pesquisa..."):
-            prompt = f"""Para o tema específico '{st.session_state.dados['tema_escolhido']}', 
-            crie 5 sugestões de 'Problema de pesquisa' em formato de pergunta.
-            
-            Output:
-            Apresente exatamente 5 problemas, em lista numerada (1 a 5).
-            Utilize linguagem acadêmica formal e rigorosa."""
-            
-            res_bruta = call_gpt(prompt)
-            st.session_state.probs_texto_bruto = res_bruta
-            
-            # Processamento para extrair apenas o texto das perguntas
-            linhas = res_bruta.strip().split('\n')
-            st.session_state.probs_lista = [
-                l.split('.', 1)[-1].strip() for l in linhas 
-                if l.strip() and l[0].isdigit()
-            ]
-
-    # Exibe as sugestões da IA
-    st.markdown("### Sugestões de Problemas de Pesquisa")
-    st.markdown(st.session_state.probs_texto_bruto)
-    st.divider()
-
-    # Entrada Híbrida
-    prob_input = st.text_area(
-        "Escolha uma opção:", 
-        placeholder="Digite o NÚMERO da pergunta desejada OU escreva seu próprio PROBLEMA DE PESQUISA completo aqui:"
-    )
-
-    if st.button("Confirmar Problema"):
-        if prob_input.strip():
-            # Verifica se é um número
-            if prob_input.isdigit():
-                indice = int(prob_input)
-                if 1 <= indice <= len(st.session_state.probs_lista):
-                    # Seleciona a pergunta correspondente
-                    st.session_state.dados['problema_pesquisa'] = st.session_state.probs_lista[indice - 1]
-                    st.session_state.step = 4
-                    st.rerun()
-                else:
-                    st.error(f"Número inválido. Escolha entre 1 e {len(st.session_state.probs_lista)}.")
-            else:
-                # Trata como novo texto digitado
-                st.session_state.dados['problema_pesquisa'] = prob_input
-                st.session_state.step = 4
-                st.rerun()
-        else:
-            st.warning("Por favor, selecione um número ou digite seu problema.")
-
-# --- AGENTE 4: OBJETIVOS ---
-elif st.session_state.step == 4:
-    st.header("Agente 4: Objetivos Específicos")
-
-    # --- PAINEL DE CONTEXTO (Escolhas anteriores) ---
-    st.markdown("### Resumo das definições anteriores")
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        st.info(f"**1. Tema Base**\n\n{st.session_state.dados.get('tema_base', '')}")
+        dados['area_conhecimento'] = st.text_input("Área do Conhecimento", value=dados['area_conhecimento'])
     with c2:
-        st.success(f"**2. Subtema**\n\n{st.session_state.dados.get('tema_escolhido', '')}")
-    with c3:
-        st.warning(f"**3. Problema**\n\n{st.session_state.dados.get('problema_pesquisa', '')}")
-    
-    st.divider()
+        dados['ideia_bruta'] = st.text_area("Ideia Inicial", value=dados['ideia_bruta'])
 
-    # Lógica Original de Geração
-    if "lista_objs" not in st.session_state:
-        with st.spinner("Gerando sugestões de objetivos..."):
-            prompt = f"Para o tema {st.session_state.dados['tema_escolhido']} e problema {st.session_state.dados['problema_pesquisa']}, sugira 10 objetivos específicos."
-            res = call_gpt(prompt)
-            # Mantendo sua lógica de parsing original do arquivo app3.py
-            st.session_state.lista_objs = [l.strip() for l in res.split('\n') if l.strip() and any(c.isdigit() for c in l[:3])]
-
-    st.markdown("### Selecione os objetivos que farão parte do seu trabalho:")
+    col_btn1, col_btn2 = st.columns(2)
     
-    # Lógica Original de Seleção (Checkboxes)
+    # Função auxiliar para rodar o grafo
+    def run_graph_step(step_name, clear_previous_list=False):
+        if clear_previous_list and step_name == 'temas':
+             dados['lista_temas_sugeridos'] = []
+             
+        dados['step_atual'] = step_name
+        
+        with st.spinner("IA processando..."):
+            # Invoca o grafo com o estado atual
+            result = app_graph.invoke(dados)
+            # Atualiza o estado do Streamlit com o resultado do grafo
+            st.session_state.state_data.update(result)
+
+    with col_btn1:
+        if st.button("Gerar Sugestões Iniciais"):
+            if not dados['area_conhecimento'] or not dados['ideia_bruta']:
+                st.warning("Preencha a área e a ideia.")
+            else:
+                run_graph_step('temas', clear_previous_list=True)
+                st.rerun()
+            
+    with col_btn2:
+        if dados['lista_temas_sugeridos']:
+            if st.button("🔄 Gerar +10 (Acumular)"):
+                run_graph_step('temas', clear_previous_list=False)
+                st.rerun()
+
+    if dados['lista_temas_sugeridos']:
+        st.info(f"{len(dados['lista_temas_sugeridos'])} sugestões geradas.")
+        
+        sel = st.radio("Selecione o tema:", dados['lista_temas_sugeridos'], index=None)
+        custom = st.text_input("Ou digite um novo:")
+        
+        if st.button("Avançar"):
+            final = custom if custom else sel
+            if final:
+                dados['tema_selecionado'] = final
+                st.session_state.step_visual = 2
+                st.rerun()
+
+# --- UI: PASSO 2 (SUBTEMAS) ---
+elif st.session_state.step_visual == 2:
+    st.header("Passo 2: Aprofundamento")
+    st.info(f"Tema Base: {dados['tema_selecionado']}")
+    
+    # Executa automaticamente se a lista estiver vazia
+    if not dados['lista_subtemas']:
+        dados['step_atual'] = 'subtemas'
+        with st.spinner("Gerando subtemas..."):
+            res = app_graph.invoke(dados)
+            st.session_state.state_data.update(res)
+            st.rerun()
+
+    sel_sub = st.radio("Selecione o recorte:", dados['lista_subtemas'], index=None)
+    custom_sub = st.text_input("Ajuste o subtema:")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Confirmar Subtema"):
+            final = custom_sub if custom_sub else sel_sub
+            if final:
+                dados['subtema_selecionado'] = final
+                st.session_state.step_visual = 3
+                st.rerun()
+    with c2:
+        if st.button("Manter Tema Original"):
+            dados['subtema_selecionado'] = dados['tema_selecionado']
+            st.session_state.step_visual = 3
+            st.rerun()
+
+# --- UI: PASSO 3 (PROBLEMA) ---
+elif st.session_state.step_visual == 3:
+    st.header("Passo 3: Problema de Pesquisa")
+    st.success(f"Subtema: {dados['subtema_selecionado']}")
+    
+    if not dados['lista_problemas']:
+        dados['step_atual'] = 'problema'
+        with st.spinner("Formulando perguntas..."):
+            res = app_graph.invoke(dados)
+            st.session_state.state_data.update(res)
+            st.rerun()
+            
+    sel_prob = st.radio("Selecione a pergunta:", dados['lista_problemas'], index=None)
+    custom_prob = st.text_area("Edite seu problema:")
+    
+    if st.button("Confirmar Problema"):
+        final = custom_prob if custom_prob else sel_prob
+        if final:
+            dados['problema_selecionado'] = final
+            st.session_state.step_visual = 4
+            st.rerun()
+
+# --- UI: PASSO 4 (OBJETIVOS) ---
+elif st.session_state.step_visual == 4:
+    st.header("Passo 4: Objetivos Específicos")
+    st.warning(f"Problema: {dados['problema_selecionado']}")
+    
+    if not dados['lista_objetivos']:
+        dados['step_atual'] = 'objetivos'
+        with st.spinner("Criando objetivos..."):
+            res = app_graph.invoke(dados)
+            st.session_state.state_data.update(res)
+            st.rerun()
+
+    st.write("Selecione os objetivos:")
     selecionados = []
-    for i, obj in enumerate(st.session_state.lista_objs):
+    for i, obj in enumerate(dados['lista_objetivos']):
         if st.checkbox(obj, key=f"obj_{i}"):
             selecionados.append(obj)
             
     if st.button("Confirmar Objetivos"):
         if selecionados:
-            st.session_state.dados['objetivos'] = "\n".join(selecionados)
-            st.session_state.step = 5
+            # Consolida lista em string
+            dados['objetivos_selecionados'] = "\n".join(selecionados)
+            st.session_state.step_visual = 5
             st.rerun()
         else:
-            st.warning("Selecione ao menos um objetivo antes de avançar.")
+            st.warning("Selecione pelo menos um.")
 
-# # --- AGENTE 5 & 6: REFERÊNCIAS E ESTRATÉGIA ---
-elif st.session_state.step == 5:
-    st.header("Agentes 5 e 6: Curadoria e Estratégia de Pesquisa")
+# --- UI: PASSO 5 (REFERÊNCIAS - Agentes 5 e 6) ---
+elif st.session_state.step_visual == 5:
+    st.header("Passo 5: Estratégia e Referências")
     
-    # --- PAINEL DE CONTEXTO ACUMULADO (Dashboard de Revisão) ---
-    st.markdown("### 📋 Resumo Consolidado do Projeto")
-    c1, c2, c3 = st.columns(3)
-    with c1: st.info(f"**Tema/Subtema**\n\n{st.session_state.dados.get('tema_escolhido', '')}")
-    with c2: st.success(f"**Problema**\n\n{st.session_state.dados.get('problema_pesquisa', '')}")
-    with c3: st.warning(f"**Objetivos**\n\n{st.session_state.dados.get('objetivos', '')}")
-    st.divider()
-
-    if "ref_classicas" not in st.session_state.dados:
-        with st.spinner("Construindo base teórica e estratégia de busca..."):
-            # --- Agente 5: Referencial Teórico Categorizado ---
-            p5 = f"""Atue como um bibliotecário acadêmico. Para o tema '{st.session_state.dados['tema_escolhido']}', 
-            identifique os autores seminais (clássicos) e as autoridades contemporâneas.
-            
-            Output desejado:
-            1. Uma tabela Markdown com as colunas: Autor | Obra Principal | Contribuição para o Tema.
-            2. Breve descrição das principais correntes de pensamento identificadas."""
-            
-            st.session_state.dados['ref_classicas'] = call_gpt(p5)
-
-# --- Agente 6: Estratégia Avançada (Validada via DeCS/MeSH) ---
-            ano_atual = datetime.now().year
-            ano_inicial = ano_atual - 5
-            
-            p6 = f"""Atue como um Especialista em Biblioteconomia e Recuperação de Dados. 
-            Sua tarefa é gerar uma estratégia de busca para o tema: '{st.session_state.dados['tema_escolhido']}'.
-            
-            PESQUISA E VALIDAÇÃO:
-            1. Acesse mentalmente ou via ferramentas de busca as bases do DeCS (Descritores em Ciências da Saúde) e MeSH.
-            2. Selecione apenas termos que sejam DESCRITORES CONTROLADOS.
-            
-            Output:
-            - Liste os Descritores encontrados (PT e EN).
-            - Monte as Strings de busca (Booleanas) para PubMed, Google Acadêmico e SciELO.
-            - Defina filtros: {ano_inicial}-{ano_atual}, idiomas PT, EN, ES.
-            
-            Apresente as strings de busca em blocos de código para facilitar a cópia."""
-            
-            st.session_state.dados['ref_atuais'] = call_gpt(p6)
-            
-            st.session_state.step = 6
+    if not dados['ref_teorica']:
+        dados['step_atual'] = 'referencias'
+        with st.spinner("Consultando bases de dados e gerando estratégia (Agentes 5 e 6)..."):
+            res = app_graph.invoke(dados)
+            st.session_state.state_data.update(res)
             st.rerun()
-
-# --- AGENTE 7: CONSOLIDAÇÃO E PDF ---
-elif st.session_state.step == 6:
-    st.header("Agente 7: Consolidação e Exportação")
+            
+    st.markdown("### Referencial Teórico")
+    st.markdown(dados['ref_teorica'])
+    st.markdown("---")
+    st.markdown("### Estratégia de Busca")
+    st.markdown(dados['ref_estrategia'])
     
-    # Processamento dos objetivos para numeração progressiva
-    objetivos_brutos = st.session_state.dados.get('objetivos', '')
-    # Remove números existentes e limpa espaços para re-numerar
-    lista_objetivos = [obj.split('.', 1)[-1].strip() for obj in objetivos_brutos.split('\n') if obj.strip()]
-    objetivos_numerados = ""
-    for idx, obj in enumerate(lista_objetivos, 1):
-        objetivos_numerados += f"{idx}. {obj}\n"
+    if st.button("Ir para Resumo Final"):
+        st.session_state.step_visual = 6
+        st.rerun()
 
-    exibicao_pdf = [
-        ('Tema Principal', st.session_state.dados.get('tema_base', '')),
-        ('Subtema', st.session_state.dados.get('tema_escolhido', '')),
-        ('Problema de Pesquisa', st.session_state.dados.get('problema_pesquisa', '')),
-        ('Objetivos Específicos', objetivos_numerados), # Aqui entra a versão numerada
-        ('Referências Clássicas (Tabela/Autores)', st.session_state.dados.get('ref_classicas', '')),
-        ('Estratégia de Busca (DeCS/MeSH)', st.session_state.dados.get('ref_atuais', ''))
-    ]
-
-    for label, conteudo in exibicao_pdf:
-        st.subheader(label)
-        st.write(conteudo)
-        st.divider()
-
-    def criar_pdf():
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        
-        pdf.set_font("helvetica", 'B', 18)
-        pdf.cell(0, 15, "Plano de Trabalho Academico", ln=True, align='C')
-        pdf.line(10, 25, 200, 25)
-        pdf.ln(10)
-        
-        for label, conteudo in exibicao_pdf:
-            pdf.set_fill_color(240, 240, 240)
-            pdf.set_font("helvetica", 'B', 12)
-            label_pdf = label.encode('latin-1', 'replace').decode('latin-1')
-            pdf.cell(0, 10, label_pdf, ln=True, fill=True)
-            pdf.ln(3)
-            
-            pdf.set_font("helvetica", size=10)
-            # Limpeza de caracteres Markdown que o PDF não suporta
-            texto_limpo = str(conteudo).replace('###', '').replace('**', '').replace('`', '')
-            linhas = texto_limpo.split('\n')
-            
-            for linha in linhas:
-                if '---' in linha and '|' in linha: continue
-                if '|' in linha: linha = linha.replace('|', '  ')
-                
-                txt_pdf = linha.encode('latin-1', 'replace').decode('latin-1')
-                pdf.multi_cell(0, 6, txt_pdf)
-            
-            pdf.ln(5)
-            
-        return pdf.output()
-
-    try:
-        pdf_bytes = criar_pdf()
-        if pdf_bytes:
-            st.download_button(
-                label="📥 Baixar Plano de Monografia Completo", 
-                data=pdf_bytes, 
-                file_name="plano_monografia.pdf", 
-                mime="application/pdf"
-            )
-    except Exception as e:
-        st.error(f"Erro ao gerar o PDF: {e}")
+# --- UI: PASSO 6 (CONSOLIDAÇÃO) ---
+elif st.session_state.step_visual == 6:
+    st.header("Plano de Trabalho Final")
     
-    if st.button("Reiniciar Sistema"):
+    # --- MUDANÇA AQUI: Exibição da Ideia Inicial ---
+    st.info(f"**Ideia Inicial do Usuário:** {dados['ideia_bruta']}")
+    # -----------------------------------------------
+    
+    # Processa numeração dos objetivos para exibição final
+    objs_raw = dados['objetivos_selecionados'].split('\n')
+    objs_fmt = "\n".join([f"{i+1}. {o.split('.', 1)[-1].strip() if '.' in o[:3] else o}" for i, o in enumerate(objs_raw)])
+    
+    md_text = f"""# Plano de Trabalho Acadêmico
+---
+**Data de Geração:** {datetime.now().strftime('%d/%m/%Y %H:%M')}
+**Área:** {dados['area_conhecimento']}
+
+## 0. Contexto Inicial
+**Ideia Original:** {dados['ideia_bruta']}
+
+## 1. Tema Principal
+{dados['tema_selecionado']}
+
+## 2. Subtema / Recorte
+{dados['subtema_selecionado']}
+
+## 3. Problema de Pesquisa
+{dados['problema_selecionado']}
+
+## 4. Objetivos Específicos
+{objs_fmt}
+
+## 5. Referencial Teórico
+{dados['ref_teorica']}
+
+## 6. Estratégia de Busca
+{dados['ref_estrategia']}
+
+---
+*Gerado via LangGraph Monografia Agent*
+"""
+
+    with st.expander("Visualizar Documento Completo", expanded=True):
+        st.markdown(md_text)
+        
+    st.download_button(
+        label="📥 Baixar Plano (.md)",
+        data=md_text,
+        file_name="plano_monografia.md",
+        mime="text/markdown"
+    )
+    
+    if st.button("Reiniciar"):
         st.session_state.clear()
         st.rerun()
