@@ -5,13 +5,14 @@ from dotenv import load_dotenv
 #from fpdf import FPDF
 from io import BytesIO
 from datetime import datetime
+import pypdf
 
 # 1. Configurações Iniciais
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 st.set_page_config(page_title="Agente Monografias", layout="wide")
-st.title("🎓 Sistema de IA para escolha do tema e estratégia de pesquisa para Monografia. v1.1")
+st.title("🎓 Sistema de IA para escolha do tema e estratégia de pesquisa para Monografia. v2.0")
 st.markdown("#### Sistema criado por Flávio Seabra (fseabra93@gmail.com)")
 
 #st.title("")
@@ -69,37 +70,155 @@ if "step" not in st.session_state:
     st.session_state.step = 1
 if "dados" not in st.session_state:
     st.session_state.dados = {}
+if "total_prompt_tokens" not in st.session_state:
+    st.session_state.total_prompt_tokens = 0
+if "total_completion_tokens" not in st.session_state:
+    st.session_state.total_completion_tokens = 0
 
 def call_gpt(prompt):
-    models = ["gpt-6-luna"]
+    models = ["gpt-6-luna", "gpt-4o", "gpt-4o-mini"]
     for m in models:
         try:
             response = client.chat.completions.create(
                 model=m, 
                 messages=[{"role": "user", "content": prompt}]
             )
+            # Acumula uso de tokens da sessão
+            if hasattr(response, "usage") and response.usage:
+                st.session_state.total_prompt_tokens += getattr(response.usage, "prompt_tokens", 0) or 0
+                st.session_state.total_completion_tokens += getattr(response.usage, "completion_tokens", 0) or 0
+
             return response.choices[0].message.content
         except Exception as e:
             if m == models[-1]:
                 return f"Erro na API: {e}"
             continue
 
+def extrair_texto_arquivo(uploaded_file) -> str:
+    texto = ""
+    try:
+        if uploaded_file.name.lower().endswith(".pdf"):
+            reader = pypdf.PdfReader(uploaded_file)
+            num_paginas = min(len(reader.pages), 15)
+            for i in range(num_paginas):
+                pagina_txt = reader.pages[i].extract_text()
+                if pagina_txt:
+                    texto += pagina_txt + "\n"
+        else:
+            texto = uploaded_file.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        st.error(f"Erro ao processar o arquivo: {e}")
+    return texto.strip()
+
+def extrair_dados_artigo_gpt(texto_artigo: str):
+    prompt_extracao = f"""Você é um orientador acadêmico e especialista em metodologia de pesquisa científica.
+Analise o texto do artigo científico a seguir e extraia as informações essenciais para a etapa de definição do tema de uma monografia (no formato de revisão integrativa da literatura):
+
+1. ÁREA: A área do conhecimento acadêmica principal e específica do artigo (ex: "Psicologia Organizacional", "Enfermagem em Saúde Coletiva", "Engenharia de Software / Inteligência Artificial", "Direito Constitucional").
+2. IDEIA: Uma síntese detalhada e contextualizada (em 2 parágrafos) do tema central, objeto de investigação, problemas/lacunas abordados e relevância científica extraídos do artigo, formulada de modo a servir como ponto de partida detalhado para a monografia do estudante.
+
+Texto do artigo científico:
+\"\"\"
+{texto_artigo[:12000]}
+\"\"\"
+
+Responda ESTRITAMENTE no seguinte formato (sem introduções, saudações ou explicações fora do formato):
+ÁREA: [Nome da Área]
+IDEIA: [Descrição detalhada da ideia inicial]
+"""
+    resposta = call_gpt(prompt_extracao)
+    area_ret = ""
+    ideia_ret = ""
+
+    if "ÁREA:" in resposta and "IDEIA:" in resposta:
+        partes = resposta.split("IDEIA:", 1)
+        area_ret = partes[0].replace("ÁREA:", "").strip()
+        ideia_ret = partes[1].strip()
+    elif "AREA:" in resposta and "IDEIA:" in resposta:
+        partes = resposta.split("IDEIA:", 1)
+        area_ret = partes[0].replace("AREA:", "").strip()
+        ideia_ret = partes[1].strip()
+    else:
+        linhas = [l.strip() for l in resposta.strip().split("\n") if l.strip()]
+        if len(linhas) >= 2:
+            area_ret = linhas[0].replace("ÁREA:", "").replace("AREA:", "").strip()
+            ideia_ret = "\n".join(linhas[1:]).replace("IDEIA:", "").strip()
+        elif len(linhas) == 1:
+            ideia_ret = linhas[0]
+
+    return area_ret, ideia_ret
+
 area = ""
 
 # --- AGENTE 1: ESCOLHA DO TEMA ---
 if st.session_state.step == 1:
     st.header("Passo 1: Definição do Tema")
-    st.subheader(f"""Digite a área do conhecimento e descreva uma ideia inicial\nLembre-se que eu sou uma IA,
-     descreva a sua ideia o mais detalhado possível.""")
+    st.subheader(f"""Aqui você deve digitar a área do conhecimento e descrever uma ideia inicial\nVocê pode digitar 
+    suas ideias nos campos abaixo ou, se preferir, carregue um artigo científico em PDF que eu extraio essas informações para você.""")
     
+    # Inicialização das variáveis de sessão para os campos e painel de upload
+    if "area_input" not in st.session_state:
+        st.session_state.area_input = ""
+    if "ideia_input" not in st.session_state:
+        st.session_state.ideia_input = ""
+    if "mostrar_upload_artigo" not in st.session_state:
+        st.session_state.mostrar_upload_artigo = False
+
+    # Botão de pergunta sobre carregar artigo científico
+    btn_artigo_label = "📄 Deseja carregar um artigo científico para extrair o tema?" if not st.session_state.mostrar_upload_artigo else "✖️ Ocultar carregamento de artigo"
+    if st.button(btn_artigo_label, key="btn_pergunta_carregar_artigo", use_container_width=True):
+        st.session_state.mostrar_upload_artigo = not st.session_state.mostrar_upload_artigo
+        st.rerun()
+
+    # Painel de upload quando acionado
+    if st.session_state.mostrar_upload_artigo:
+        with st.container(border=True):
+            st.markdown("#### 📄 Carregar Artigo Científico de Referência")
+            st.caption("Envie um arquivo em formato **PDF** ou **TXT**. O agente analisará o documento para identificar a **Área do Conhecimento** e estruturar uma **Ideia Inicial** detalhada para o seu trabalho.")
+            
+            uploaded_artigo = st.file_uploader(
+                "Selecione o artigo científico (PDF ou TXT):",
+                type=["pdf", "txt"],
+                key="uploader_artigo_arquivo"
+            )
+            
+            if uploaded_artigo is not None:
+                if st.button("🔍 Extrair Informações do Artigo", type="primary", key="btn_processar_extracao", use_container_width=True):
+                    with st.spinner("Lendo e analisando o artigo científico..."):
+                        texto_artigo = extrair_texto_arquivo(uploaded_artigo)
+                        if not texto_artigo or len(texto_artigo.strip()) < 50:
+                            st.error("Não foi possível extrair texto legível deste arquivo. Certifique-se de que o PDF contém texto selecionável (não seja imagem digitalizada).")
+                        else:
+                            area_ext, ideia_ext = extrair_dados_artigo_gpt(texto_artigo)
+                            if area_ext and ideia_ext:
+                                st.session_state.area_input = area_ext
+                                st.session_state.ideia_input = ideia_ext
+                                st.session_state.mostrar_upload_artigo = False
+                                st.success("✅ Informações extraídas com sucesso! Os campos abaixo foram preenchidos automaticamente. Você pode revisá-los ou ajustá-los.")
+                                st.rerun()
+                            else:
+                                st.error("Não foi possível extrair os dados estruturados do artigo. Tente novamente ou preencha manualmente.")
+
     st.markdown("---")
     
     col1, col2 = st.columns(2)
     with col1:
-        area = st.text_input("Área do Conhecimento", placeholder="Ex: Psicologia Organizacional")
+        area = st.text_input(
+            "Área do Conhecimento",
+            value=st.session_state.area_input,
+            placeholder="Ex: Psicologia Organizacional"
+        )
+        st.session_state.area_input = area
     with col2:
         st.markdown("Descreva sua ideia aqui o mais detalhado possível", unsafe_allow_html=True)
-        ideia_bruta = st.text_area(label="Descricao", label_visibility="collapsed", placeholder="Ex: Quero escrever sobre...")
+        ideia_bruta = st.text_area(
+            label="Descricao",
+            value=st.session_state.ideia_input,
+            label_visibility="collapsed",
+            placeholder="Ex: Quero escrever sobre...",
+            height=130
+        )
+        st.session_state.ideia_input = ideia_bruta
 
     # Inicializa a lista de temas se não existir
     if "lista_temas_sugeridos" not in st.session_state:
@@ -569,6 +688,12 @@ elif st.session_state.step == 6:
         area_user = st.session_state.dados.get('area_usuario', 'Não informada')
         ideia_user = st.session_state.dados.get('ideia_usuario', 'Não informada')
 
+        # Métricas de consumo de tokens
+        prompt_tokens = st.session_state.get('total_prompt_tokens', 0)
+        completion_tokens = st.session_state.get('total_completion_tokens', 0)
+        total_tokens = prompt_tokens + completion_tokens
+        tokens_info = f"Tokens utilizados: {prompt_tokens:,} de entrada e {completion_tokens:,} de saída — Total: {total_tokens:,} tokens".replace(",", ".")
+
         md_text = f"""# Plano de Trabalho Acadêmico
 ---
 **Data de Geração:** {datetime.now().strftime('%d/%m/%Y %H:%M')}
@@ -597,7 +722,8 @@ elif st.session_state.step == 6:
 {st.session_state.dados.get('ref_atuais', 'Não gerada')}
 
 ---
-*Gerado pelo Sistema de IA para Monografia*
+*Gerado pelo Sistema de IA para Monografia*  
+*{tokens_info}*
 """
         return md_text
 
@@ -606,6 +732,12 @@ elif st.session_state.step == 6:
     # Exibição na tela para conferência
     with st.expander("Visualizar rascunho completo", expanded=True):
         st.markdown(conteudo_md)
+
+    # Exibição visual das métricas de tokens na interface
+    p_toks = st.session_state.get('total_prompt_tokens', 0)
+    c_toks = st.session_state.get('total_completion_tokens', 0)
+    t_toks = p_toks + c_toks
+    st.caption(f"📊 **Consumo total da sessão:** {p_toks:,} tokens de entrada (prompt) | {c_toks:,} tokens de saída (geração) | Total: {t_toks:,} tokens".replace(",", "."))
 
     st.divider()
 

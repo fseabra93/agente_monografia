@@ -17,14 +17,18 @@ Por meio de agentes inteligentes e modelos de linguagem (OpenAI GPT / LangGraph)
 
 O assistente é organizado em etapas consecutivas e interativas:
 
-1. **Passo 1 — Definição do Tema:** A partir da área do conhecimento e da ideia inicial do estudante, a IA sugere 10 temas viáveis e acadêmicos.
+1. **Passo 1 — Definição do Tema:** 
+   - **Preenchimento Manual ou via Artigo:** O estudante pode digitar manualmente a área e a ideia inicial **ou** clicar no botão para carregar um artigo científico de referência (PDF ou TXT), a partir do qual o agente extrai automaticamente a área e sintetiza a ideia do tema.
+   - **Geração de Temas:** A IA gera 10 opções de temas viáveis e acadêmicos.
 2. **Passo 2 — Delimitação em Subtemas:** O agente mapeia **6 subtemas abrangentes e distintos**, garantindo que nenhum se sobreponha e cobrindo os eixos teóricos, metodológicos, contextuais e de impacto.
 3. **Passo 3 — Problema de Pesquisa:** Formula **6 problemas de pesquisa (perguntas norteadoras)** sem sobreposição conceitual, focados em revisão integrativa.
 4. **Passo 4 — Objetivos da Pesquisa:** Sugere objetivos específicos com verbos no infinitivo e justificativas metodológicas.
 5. **Passo 5 — Curadoria Teórica e Estratégia de Busca:**
    - **Referencial Teórico:** Mapa de autores clássicos e contemporâneos e correntes de pensamento.
    - **Estratégia DeCS/MeSH:** Descritores controlados e strings booleanas (`AND`/`OR`) para PubMed, SciELO, LILACS e Google Acadêmico.
-6. **Passo 6 — Consolidação e Exportação:** Visualização unificada e download do Plano de Trabalho em formato Markdown (`.md`).
+6. **Passo 6 — Consolidação, Métricas e Exportação:** 
+   - Visualização unificada do Plano de Trabalho Acadêmico e download em formato Markdown (`.md`).
+   - **Métricas de Consumo de Tokens:** Contabilização transparente e exibição detalhada dos tokens de entrada (prompt) e saída (resposta) consumidos pelo modelo em todas as etapas desde o início da sessão.
 
 > [!TIP]
 > **Navegação Flexível & Identidade Visual:**  
@@ -36,9 +40,11 @@ O assistente é organizado em etapas consecutivas e interativas:
 
 ```mermaid
 flowchart TD
-    subgraph Entrada ["📥 Entrada de Dados"]
-        In1["Área do Conhecimento"]
-        In2["Ideia Inicial do Estudante"]
+    subgraph Entrada ["📥 Entrada de Dados (Passo 1)"]
+        In1["Entrada Manual: Área e Ideia Inicial"]
+        InArtigo["Upload de Artigo Científico (PDF / TXT)"]
+        Extrator["Extrator IA: Síntese de Área e Ideia"]
+        InArtigo --> Extrator --> In1
     end
 
     subgraph Passo1 ["🎯 Passo 1: Definição do Tema"]
@@ -79,6 +85,7 @@ flowchart TD
 
     subgraph Passo6 ["📄 Passo 6: Consolidação e Exportação"]
         Relatorio["Plano de Trabalho Acadêmico Estruturado"]
+        Metricas["Contabilidade de Tokens (Entrada e Saída)"]
         Download["Download do Arquivo Markdown (.md)"]
         BtnVoltar6["Retornar ao Passo 4"]
         BtnReset["Reiniciar Sistema"]
@@ -105,7 +112,8 @@ flowchart TD
     BtnConf4 --> A6
     A5 --> Relatorio
     A6 --> Relatorio
-    Relatorio --> Download
+    Relatorio --> Metricas
+    Metricas --> Download
 
     %% Ciclos de Retorno / Navegação Interativa
     BtnVoltar2 -. "Retornar" .-> U1
@@ -123,9 +131,11 @@ flowchart TD
 agente_monografia/
 ├── app.py                # Interface web principal interativa em Streamlit
 ├── graph_logic.py        # Grafo de agentes e orquestração do LangGraph
-├── requirements.txt      # Dependências do projeto
+├── requirements.txt      # Dependências do projeto (Streamlit, OpenAI, pypdf, etc.)
 ├── .env.example          # Modelo de variáveis de ambiente
-└── .gitignore            # Arquivos ignorados pelo Git (.env, venvs, etc.)
+├── .gitignore            # Arquivos ignorados pelo Git (.env, venvs, etc.)
+└── .streamlit/           # Configurações de tema visual (botões vermelhos)
+    └── config.toml
 ```
 
 ---
@@ -215,6 +225,7 @@ O aplicativo abrirá automaticamente no navegador no endereço:
 - **[Streamlit](https://streamlit.io/):** Criação rápida de interfaces web interativas.
 - **[LangGraph](https://github.com/langchain-ai/langgraph) & [LangChain](https://www.langchain.com/):** Orquestração do estado e fluxo dos agentes de pesquisa.
 - **[OpenAI API](https://platform.openai.com/docs):** Modelos de linguagem para geração e refinamento dos passos metodológicos.
+- **[pypdf](https://pypi.org/project/pypdf/):** Extração e leitura de texto de artigos científicos em PDF para o Passo 1.
 - **[python-dotenv](https://github.com/theskumar/python-dotenv):** Gerenciamento seguro de variáveis de ambiente.
 
 ---
