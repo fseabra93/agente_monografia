@@ -77,11 +77,16 @@ def agente_gerar_subtemas(state: MonografiaState):
             Sua tarefa é realizar um recorte ou aprofundamento deste tema para torná-lo mais específico 
             e viável para uma pesquisa acadêmica.
             
-            Output: Gere exatamente 10 sugestões de subtemas ou recortes específicos em lista numerada."""
+            Critérios obrigatórios:
+            - Gere exatamente 6 sugestões de subtemas em lista numerada de 1 a 6.
+            - As 6 opções DEVEM ser abrangentes e cobrir todos os aspectos relevantes do tema abordado (conceituais, metodológicos, populacionais, organizacionais, práticos e impactos).
+            - É ESTRITAMENTE PROIBIDO que existam duas opções que tratem do tema de forma muito parecida ou redundante. Cada uma deve ser um recorte único e independente.
+            
+            Output: Gere exatamente 6 sugestões de subtemas em lista numerada de 1 a 6."""
     
     res = call_gpt(prompt)
     subtemas = [l.split('.', 1)[-1].strip() if '.' in l[:3] else l.strip() 
-                for l in res.strip().split('\n') if l.strip()]
+                for l in res.strip().split('\n') if l.strip()][:6]
     return {"subtemas_lista": subtemas}
 
 def agente_gerar_problema(state: MonografiaState):
@@ -92,11 +97,16 @@ def agente_gerar_problema(state: MonografiaState):
             Sua tarefa é formular problemas de pesquisa (perguntas norteadoras) que sejam 
             compatíveis com uma revisão integrativa da literatura.
             
-            Gere exatamente 10 sugestões de problema de pesquisa em lista numerada."""
+            Critérios obrigatórios:
+            - Gere exatamente 6 sugestões de problema de pesquisa em lista numerada de 1 a 6.
+            - As 6 opções DEVEM ser abrangentes e cobrir diferentes dimensões e ângulos do tema abordado.
+            - É ESTRITAMENTE PROIBIDO que existam duas opções parecidas ou com redundância investigativa.
+            
+            Output: Gere exatamente 6 sugestões de problema de pesquisa em lista numerada de 1 a 6."""
     
     res = call_gpt(prompt)
     probs = [l.split('.', 1)[-1].strip() if '.' in l[:3] else l.strip() 
-             for l in res.strip().split('\n') if l.strip()]
+             for l in res.strip().split('\n') if l.strip()][:6]
     return {"probs_lista": probs}
 
 def agente_gerar_objetivos(state: MonografiaState):

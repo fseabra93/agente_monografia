@@ -12,9 +12,58 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 st.set_page_config(page_title="Agente Monografias", layout="wide")
 st.title("🎓 Sistema de IA para escolha do tema e estratégia de pesquisa para Monografia. v1.1")
-st.markdown("#### Sistema criado por Flávio Seabra (https://www.instagram.com/fs_orientadoracademico/)")
+st.markdown("#### Sistema criado por Flávio Seabra (fseabra93@gmail.com)")
 
 #st.title("")
+
+# Estilização CSS personalizada para botões de confirmação vermelhos
+st.markdown("""
+<style>
+/* Forçar estilo vermelho para todos os botões de confirmação (type="primary") */
+button[kind="primary"],
+button[data-testid="stBaseButton-primary"],
+button[data-testid="baseButton-primary"],
+div.stButton > button[kind="primary"],
+div.stButton > button[data-testid="stBaseButton-primary"],
+div.stButton > button[data-testid="baseButton-primary"],
+div[data-testid="stButton"] > button[kind="primary"],
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+    background-color: #d32f2f !important;
+    border-color: #d32f2f !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+}
+
+button[kind="primary"]:hover,
+button[data-testid="stBaseButton-primary"]:hover,
+button[data-testid="baseButton-primary"]:hover,
+div.stButton > button[kind="primary"]:hover,
+div.stButton > button[data-testid="stBaseButton-primary"]:hover,
+div.stButton > button[data-testid="baseButton-primary"]:hover,
+div[data-testid="stButton"] > button[kind="primary"]:hover,
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"]:hover {
+    background-color: #b71c1c !important;
+    border-color: #b71c1c !important;
+    color: #ffffff !important;
+}
+
+button[kind="primary"]:focus,
+button[data-testid="stBaseButton-primary"]:focus,
+div.stButton > button[kind="primary"]:focus,
+div[data-testid="stButton"] > button[kind="primary"]:focus {
+    box-shadow: 0 0 0 0.2rem rgba(211, 47, 47, 0.4) !important;
+}
+
+button[kind="primary"]:active,
+button[data-testid="stBaseButton-primary"]:active,
+div.stButton > button[kind="primary"]:active,
+div[data-testid="stButton"] > button[kind="primary"]:active {
+    background-color: #9a0007 !important;
+    border-color: #9a0007 !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -22,14 +71,18 @@ if "dados" not in st.session_state:
     st.session_state.dados = {}
 
 def call_gpt(prompt):
-    try:
-        response = client.chat.completions.create(
-            model="gpt-5.1", 
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Erro na API: {e}"
+    models = ["gpt-6-luna"]
+    for m in models:
+        try:
+            response = client.chat.completions.create(
+                model=m, 
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if m == models[-1]:
+                return f"Erro na API: {e}"
+            continue
 
 area = ""
 
@@ -133,18 +186,25 @@ if st.session_state.step == 1:
             help="Esta lista contém todas as sugestões geradas nesta sessão."
         )
         
-        outra_opcao = st.text_input("Ou ajuste o tema selecionado (ou digite um novo) aqui:")
+        outra_opcao = st.text_input("Você pode também digitar livremente um outro tema aqui:")
         
-        if st.button("Avançar para Aprofundamento"):
-                    escolha_final = outra_opcao if outra_opcao.strip() else tema_selecionado
-                    if escolha_final:
-                        # ADICIONE ESTAS DUAS LINHAS:
-                        st.session_state.dados['area_usuario'] = area
-                        st.session_state.dados['ideia_usuario'] = ideia_bruta
-                        
-                        st.session_state.dados['tema_base'] = escolha_final
-                        st.session_state.step = 2
-                        st.rerun()
+        if st.button("Confirmar Tema e Avançar", type="primary", key="btn_confirmar_step1"):
+            escolha_final = outra_opcao if outra_opcao.strip() else tema_selecionado
+            if escolha_final:
+                st.session_state.dados['area_usuario'] = area
+                st.session_state.dados['ideia_usuario'] = ideia_bruta
+                
+                # Se o tema base mudou, reinicializa as escolhas posteriores
+                if st.session_state.dados.get('tema_base') != escolha_final:
+                    st.session_state.pop('subtemas_lista', None)
+                    st.session_state.pop('probs_lista', None)
+                    st.session_state.pop('lista_objs', None)
+                    st.session_state.dados.pop('ref_classicas', None)
+                    st.session_state.dados.pop('ref_atuais', None)
+                
+                st.session_state.dados['tema_base'] = escolha_final
+                st.session_state.step = 2
+                st.rerun()
 
 # --- AGENTE 2: APROFUNDAMENTO ---
 elif st.session_state.step == 2:
@@ -153,12 +213,13 @@ elif st.session_state.step == 2:
     st.info(f"**Tema Base Selecionado:** {st.session_state.dados['tema_base']}")
     st.divider()
 
-    if "subtemas_lista" not in st.session_state:
-        with st.spinner("O orientador está gerando subtemas específicos..."):
+    if "subtemas_lista" not in st.session_state or not st.session_state.subtemas_lista:
+        area_atual = st.session_state.dados.get('area_usuario') or area or "sua área de estudo"
+        with st.spinner("O orientador está gerando 6 subtemas específicos e abrangentes..."):
 
             prompt = f"""
                     Você é um especialista em metodologia de pesquisa científica com ampla experiência 
-                    em revisões integrativas da literatura na área de {area}.
+                    em revisões integrativas da literatura na área de {area_atual}.
 
                     Sua tarefa é mapear os principais subtemas que compõem ou se relacionam diretamente 
                     com o seguinte tema de pesquisa:
@@ -169,39 +230,50 @@ elif st.session_state.step == 2:
                     de forma independente dentro do tema central, com literatura científica própria 
                     e relevância para uma revisão integrativa de TCC de graduação.
 
-                    Critérios para as sugestões:
-                    - Devem ser recortes diretos do tema central, não tópicos periféricos ou tangenciais
-                    - Devem ter literatura científica disponível suficiente para uma revisão integrativa
-                    - Devem variar entre recortes conceituais, populacionais, contextuais e aplicados,
-                    sempre que pertinente ao tema
-                    - Devem ser viáveis no escopo de um TCC de graduação
+                    Critérios obrigatórios para as sugestões:
+                    - Gere exatamente 6 sugestões de subtemas em lista numerada de 1 a 6.
+                    - As 6 opções DEVEM ser abrangentes e contemplar todos os aspectos relevantes do tema abordado (por exemplo: dimensões conceituais/teóricas, metodológicas, populacionais/público-alvo, organizacionais/contextuais, tecnológicas/aplicadas e impactos/desfechos).
+                    - É ESTRITAMENTE PROIBIDO que existam duas opções que tratem do tema de forma muito parecida ou redundante. Cada uma das 6 opções deve representar um eixo temático distinto e independente.
+                    - Devem ser recortes diretos do tema central, com literatura científica disponível suficiente para uma revisão integrativa.
+                    - Devem ser viáveis no escopo de um TCC de graduação.
                     
                     Output:
-                    Gere exatamente 10 sugestões de subtemas em lista numerada de 1 a 10.
+                    Gere exatamente 6 sugestões de subtemas em lista numerada de 1 a 6.
                     Cada item deve conter o título do subtema escrito em negrito seguido de uma breve justificativa 
                     acadêmica de sua relevância para o tema central, no seguinte formato:
-                    {{título do subtema}}: {{justificativa}};
+                    **{{título do subtema}}**: {{justificativa}};
                     Use linguagem acadêmica formal.
                     """
             
             res = call_gpt(prompt)
-                        # Processa a resposta para garantir uma lista limpa
+            # Processa a resposta para garantir uma lista limpa com exatamente 6 opções
             st.session_state.subtemas_lista = [l.split('.', 1)[-1].strip() if '.' in l[:3] else l.strip() 
-                                            for l in res.strip().split('\n') if l.strip()]
+                                            for l in res.strip().split('\n') if l.strip()][:6]
 
     # Interface de Seleção por Clique
     sub_selecionado = st.radio(
-        "Selecione um recorte específico para sua pesquisa:",
+        "Selecione um recorte específico para sua pesquisa (6 opções abrangentes):",
         st.session_state.subtemas_lista,
         index=None,
         help="Clique em uma das opções geradas pela IA"
     )
     
-    outra_opcao = st.text_input("Ou ajuste o subtema selecionado (ou digite um novo) aqui:")
+    outra_opcao = st.text_input("Ou digite livremente um subtema aqui:")
 
-    col_acc1, col_acc2 = st.columns(2)
+    col_voltar, col_acc2, col_acc1 = st.columns([1, 1, 1])
+    with col_voltar:
+        if st.button("⬅️ Retornar ao passo anterior", key="btn_voltar_step2"):
+            st.session_state.step = 1
+            st.rerun()
+
+    with col_acc2:
+        if st.button("⏩ Manter Tema Original", key="btn_manter_tema"):
+            st.session_state.dados['tema_escolhido'] = st.session_state.dados['tema_base']
+            st.session_state.step = 3
+            st.rerun()
+
     with col_acc1:
-        if st.button("Confirmar Subtema"):
+        if st.button("Confirmar Subtema", type="primary", key="btn_confirmar_step2"):
             escolha_final = outra_opcao if outra_opcao.strip() else sub_selecionado
             if escolha_final:
                 st.session_state.dados['tema_escolhido'] = escolha_final
@@ -209,12 +281,6 @@ elif st.session_state.step == 2:
                 st.rerun()
             else:
                 st.warning("Selecione uma opção ou descreva seu tema.")
-
-    with col_acc2:
-        if st.button("⏩ Manter Tema Original"):
-            st.session_state.dados['tema_escolhido'] = st.session_state.dados['tema_base']
-            st.session_state.step = 3
-            st.rerun()
 
 
 
@@ -235,8 +301,8 @@ elif st.session_state.step == 3:
     
     st.divider()
 
-    if "probs_lista" not in st.session_state:
-        with st.spinner("Formulando problemas de pesquisa..."):
+    if "probs_lista" not in st.session_state or not st.session_state.probs_lista:
+        with st.spinner("Formulando 6 problemas de pesquisa abrangentes e distintos..."):
             prompt = f"""Você é um especialista em metodologia de pesquisa científica com ampla experiência 
                             em revisões integrativas da literatura.
 
@@ -249,26 +315,27 @@ elif st.session_state.step == 3:
                             que orienta toda a revisão, cuja resposta pode ser construída a partir da análise 
                             crítica da literatura científica existente — sem coleta de dados primários.
 
-                            Critérios para as sugestões:
+                            Critérios obrigatórios para as sugestões:
+                            - Gere exatamente 6 sugestões de problema de pesquisa em lista numerada de 1 a 6.
+                            - As 6 opções DEVEM ser abrangentes e cobrir diferentes aspectos e dimensões relevantes do tema abordado (por exemplo: relações e associações entre variáveis, fatores condicionantes ou facilitadores/barreiras, impactos ou efetividade de abordagens, desafios operacionais ou metodológicos, lacunas conceituais e tendências evolutivas da literatura).
+                            - É ESTRITAMENTE PROIBIDO que existam duas opções que tratem do tema de forma muito parecida ou com o mesmo foco investigativo. Cada pergunta deve propor um ângulo de análise claramente distinto.
                             - Devem ser perguntas respondíveis por meio de revisão da literatura, 
-                            não por experimentos ou coleta de dados primários
+                            não por experimentos ou coleta de dados primários.
                             - Devem ter escopo adequado a um TCC de graduação: nem amplos demais 
-                            (impossíveis de responder) nem restritos demais (literatura insuficiente)
-                            - Devem variar em abordagem: algumas focando em relações entre variáveis, 
-                            outras em lacunas do conhecimento, outras em comparações ou tendências 
-                            identificadas na literatura
-                            - Devem ser formulados de forma clara, objetiva e em linguagem acadêmica formal
+                            (impossíveis de responder) nem restritos demais (literatura insuficiente).
+                            - Devem ser formuladas de forma clara, objetiva e em linguagem acadêmica formal.
 
-                            Gere exatamente 10 sugestões de problema de pesquisa em lista numerada de 1 a 10,
+                            Output:
+                            Gere exatamente 6 sugestões de problema de pesquisa em lista numerada de 1 a 6,
                             apresentando apenas as perguntas, sem comentários ou explicações adicionais."""
             
             res_bruta = call_gpt(prompt)
             st.session_state.probs_lista = [l.split('.', 1)[-1].strip() if '.' in l[:3] else l.strip() 
-                                           for l in res_bruta.strip().split('\n') if l.strip()]
+                                           for l in res_bruta.strip().split('\n') if l.strip()][:6]
 
     # Interface de Seleção por Clique
     prob_selecionado = st.radio(
-        "Selecione a pergunta norteadora do seu trabalho:",
+        "Selecione a pergunta norteadora do seu trabalho (6 opções abrangentes):",
         st.session_state.probs_lista,
         index=None
     )
@@ -276,14 +343,23 @@ elif st.session_state.step == 3:
     ajuste_prob = st.text_area("Deseja editar ou escrever seu próprio problema?", 
                                placeholder="Se selecionou uma opção acima e quer mudar algo, escreva aqui.")
 
-    if st.button("Confirmar Problema de Pesquisa"):
-        escolha_final = ajuste_prob if ajuste_prob.strip() else prob_selecionado
-        if escolha_final:
-            st.session_state.dados['problema_pesquisa'] = escolha_final
-            st.session_state.step = 4
+    col_voltar, col_confirmar = st.columns([1, 2])
+    with col_voltar:
+        if st.button("⬅️ Retornar ao passo anterior", key="btn_voltar_step3"):
+            st.session_state.step = 2
             st.rerun()
-        else:
-            st.warning("Por favor, selecione uma das opções acima.")
+
+    with col_confirmar:
+        if st.button("Confirmar Problema de Pesquisa", type="primary", key="btn_confirmar_step3"):
+            escolha_final = ajuste_prob if ajuste_prob.strip() else prob_selecionado
+            if escolha_final:
+                if st.session_state.dados.get('problema_pesquisa') != escolha_final:
+                    st.session_state.pop('lista_objs', None)
+                st.session_state.dados['problema_pesquisa'] = escolha_final
+                st.session_state.step = 4
+                st.rerun()
+            else:
+                st.warning("Por favor, selecione uma das opções acima.")
 
 # --- AGENTE 4: OBJETIVOS ---
 elif st.session_state.step == 4:
@@ -346,13 +422,20 @@ elif st.session_state.step == 4:
         if st.checkbox(obj, key=f"obj_{i}"):
             selecionados.append(obj)
             
-    if st.button("Confirmar Objetivos"):
-        if selecionados:
-            st.session_state.dados['objetivos'] = "\n".join(selecionados)
-            st.session_state.step = 5
+    col_voltar, col_confirmar = st.columns([1, 2])
+    with col_voltar:
+        if st.button("⬅️ Retornar ao passo anterior", key="btn_voltar_step4"):
+            st.session_state.step = 3
             st.rerun()
-        else:
-            st.warning("Selecione ao menos um objetivo antes de avançar.")
+
+    with col_confirmar:
+        if st.button("Confirmar Objetivos", type="primary", key="btn_confirmar_step4"):
+            if selecionados:
+                st.session_state.dados['objetivos'] = "\n".join(selecionados)
+                st.session_state.step = 5
+                st.rerun()
+            else:
+                st.warning("Selecione ao menos um objetivo antes de avançar.")
 
 # # --- AGENTE 5 & 6: REFERÊNCIAS E ESTRATÉGIA ---
 elif st.session_state.step == 5:
@@ -526,14 +609,22 @@ elif st.session_state.step == 6:
 
     st.divider()
 
-    # Botão de Download em Markdown
-    st.download_button(
-        label="📥 Baixar Plano em Markdown (.md)",
-        data=conteudo_md,
-        file_name=f"plano_monografia_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-        mime="text/markdown"
-    )
+    col_dl, col_voltar, col_reiniciar = st.columns([2, 1, 1])
+    with col_dl:
+        st.download_button(
+            label="📥 Baixar Plano em Markdown (.md)",
+            data=conteudo_md,
+            file_name=f"plano_monografia_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
 
-    if st.button("Reiniciar Sistema"):
-        st.session_state.clear()
-        st.rerun()
+    with col_voltar:
+        if st.button("⬅️ Retornar ao passo anterior", key="btn_voltar_step6", use_container_width=True):
+            st.session_state.step = 4
+            st.rerun()
+
+    with col_reiniciar:
+        if st.button("🔄 Reiniciar Sistema", key="btn_reiniciar", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
